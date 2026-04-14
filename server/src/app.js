@@ -20,6 +20,15 @@ const clientOrigin = resolveClientOrigin();
 app.use(cors({ origin: clientOrigin, credentials: true }));
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const started = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - started;
+    console.log(`[api] ${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms`);
+  });
+  next();
+});
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.use('/api', publicRoutes);

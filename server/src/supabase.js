@@ -10,3 +10,14 @@ if (!url || !serviceKey) {
 export const supabaseAdmin = createClient(url || '', serviceKey || '', {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+/**
+ * Use ONLY for `auth.getUser(jwt)`. Do not call `getUser(jwt)` on `supabaseAdmin`:
+ * it can overwrite that singleton's Authorization header, which breaks concurrent
+ * `.from()` calls (e.g. admin dashboard Promise.all to users + categories + courses).
+ */
+export function createJwtValidationClient() {
+  return createClient(url || '', serviceKey || '', {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}

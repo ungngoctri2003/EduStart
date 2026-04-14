@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../supabase.js';
+import { createJwtValidationClient, supabaseAdmin } from '../supabase.js';
 
 /**
  * Validates the access token against Supabase Auth (GET /auth/v1/user).
@@ -11,7 +11,8 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
   }
   const token = header.slice(7);
-  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+  const jwtClient = createJwtValidationClient();
+  const { data: authData, error: authError } = await jwtClient.auth.getUser(token);
   if (authError || !authData?.user?.id) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
@@ -49,7 +50,8 @@ export async function optionalAuth(req, res, next) {
   }
   const token = header.slice(7);
   try {
-    const { data: authData } = await supabaseAdmin.auth.getUser(token);
+    const jwtClient = createJwtValidationClient();
+    const { data: authData } = await jwtClient.auth.getUser(token);
     const userId = authData?.user?.id;
     if (!userId) return next();
     const { data: profile } = await supabaseAdmin

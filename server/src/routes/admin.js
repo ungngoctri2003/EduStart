@@ -6,33 +6,95 @@ const r = Router();
 
 r.use(requireAuth, requireRole('admin'));
 
-r.get('/users', async (_req, res) => {
+r.get('/users', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .select('id, full_name, role, created_at')
+    .select('id, full_name, role, email, created_at')
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(data || []);
 });
 
-r.patch('/users/:id/role', async (req, res) => {
-  const { id } = req.params;
-  const { role } = req.body || {};
-  if (!['admin', 'student'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid role' });
+r.post('/users', async (req, res) => {
+  const { email, password, full_name, role } = req.body || {};
+  if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'email and password required' });
   }
-  const { data, error } = await supabaseAdmin
+  const rVal = role && ['admin', 'student'].includes(role) ? role : 'student';
+  const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+    email: email.trim(),
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: typeof full_name === 'string' ? full_name : '' },
+  });
+  if (createErr) return res.status(400).json({ error: createErr.message });
+  const uid = created.user.id;
+
+  const profilePatch = { role: rVal };
+  if (typeof full_name === 'string' && full_name.trim()) {
+    profilePatch.full_name = full_name.trim();
+  }
+  const { error: upErr } = await supabaseAdmin.from('profiles').update(profilePatch).eq('id', uid);
+  if (upErr) return res.status(500).json({ error: upErr.message });
+
+  const { data: row, error: fetchErr } = await supabaseAdmin
     .from('profiles')
-    .update({ role })
-    .eq('id', id)
-    .select()
+    .select('id, full_name, role, email, created_at')
+    .eq('id', uid)
     .single();
-  if (error) return res.status(500).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: 'User not found' });
-  res.json(data);
+  if (fetchErr || !row) return res.status(500).json({ error: fetchErr?.message || 'Profile fetch failed' });
+  res.status(201).json(row);
 });
 
-r.get('/contact-messages', async (_req, res) => {
+r.patch('/users/:id', async (req, res) => {
+  const { id } = req.params;
+  const { full_name, role, email, password } = req.body || {};
+
+  if (id === req.user.id && role === 'student' && req.user.role === 'admin') {
+    return res.status(400).json({ error: 'Cannot remove own admin role' });
+  }
+
+  const authUpdate = {};
+  if (typeof email === 'string' && email.trim()) authUpdate.email = email.trim();
+  if (typeof password === 'string' && password.length > 0) authUpdate.password = password;
+  if (Object.keys(authUpdate).length > 0) {
+    const { error: auErr } = await supabaseAdmin.auth.admin.updateUserById(id, authUpdate);
+    if (auErr) return res.status(400).json({ error: auErr.message });
+  }
+
+  const profilePatch = {};
+  if (full_name !== undefined) {
+    profilePatch.full_name = typeof full_name === 'string' && full_name.trim() ? full_name.trim() : null;
+  }
+  if (role !== undefined) {
+    if (!['admin', 'student'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    profilePatch.role = role;
+  }
+  if (Object.keys(profilePatch).length > 0) {
+    const { error: pErr } = await supabaseAdmin.from('profiles').update(profilePatch).eq('id', id);
+    if (pErr) return res.status(500).json({ error: pErr.message });
+  }
+
+  const { data: row, error: fetchErr } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, role, email, created_at')
+    .eq('id', id)
+    .single();
+  if (fetchErr || !row) return res.status(404).json({ error: 'User not found' });
+  res.json(row);
+});
+
+r.delete('/users/:id', async (req, res) => {
+  const { id } = req.params;
+  if (id === req.user.id) {
+    return res.status(400).json({ error: 'Cannot delete own account' });
+  }
+  const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.status(204).send();
+});
+
+r.get('/contact-messages', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('contact_messages')
     .select('*')
@@ -83,7 +145,7 @@ r.delete('/categories/:id', async (req, res) => {
 });
 
 // Courses (admin full)
-r.get('/courses', async (_req, res) => {
+r.get('/courses', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('courses')
     .select('*, categories(id, name, slug)')
@@ -162,13 +224,28 @@ r.post('/courses/:courseId/lectures', async (req, res) => {
   const { courseId } = req.params;
   const body = req.body || {};
   if (!body.title) return res.status(400).json({ error: 'title required' });
+  let blocks = body.blocks;
+  if (blocks !== undefined && !Array.isArray(blocks)) {
+    return res.status(400).json({ error: 'blocks must be an array' });
+  }
+  if (Array.isArray(blocks) && blocks.length > 0) {
+    blocks = blocks.map((b) => ({
+      title: b?.title != null && String(b.title).trim() ? String(b.title).trim() : null,
+      content: b?.content != null && String(b.content).trim() ? String(b.content).trim() : null,
+      video_url: b?.video_url != null && String(b.video_url).trim() ? String(b.video_url).trim() : null,
+    }));
+  } else {
+    blocks = [];
+  }
+  const useBlocks = blocks.some((b) => b.title || b.content || b.video_url);
   const { data, error } = await supabaseAdmin
     .from('course_lectures')
     .insert({
       course_id: courseId,
       title: body.title,
-      content: body.content ?? null,
-      video_url: body.video_url ?? null,
+      content: useBlocks ? null : body.content ?? null,
+      video_url: useBlocks ? null : body.video_url ?? null,
+      blocks: useBlocks ? blocks : [],
       sort_order: body.sort_order ?? 0,
     })
     .select()
@@ -179,8 +256,29 @@ r.post('/courses/:courseId/lectures', async (req, res) => {
 
 r.patch('/lectures/:id', async (req, res) => {
   const patch = {};
-  for (const k of ['title', 'content', 'video_url', 'sort_order']) {
-    if (req.body[k] !== undefined) patch[k] = req.body[k];
+  for (const k of ['title', 'content', 'video_url', 'sort_order', 'blocks']) {
+    if (req.body[k] !== undefined) {
+      if (k === 'blocks') {
+        if (!Array.isArray(req.body.blocks)) {
+          return res.status(400).json({ error: 'blocks must be an array' });
+        }
+        patch.blocks = req.body.blocks.map((b) => ({
+          title: b?.title != null && String(b.title).trim() ? String(b.title).trim() : null,
+          content: b?.content != null && String(b.content).trim() ? String(b.content).trim() : null,
+          video_url: b?.video_url != null && String(b.video_url).trim() ? String(b.video_url).trim() : null,
+        }));
+      } else {
+        patch[k] = req.body[k];
+      }
+    }
+  }
+  if (
+    patch.blocks !== undefined &&
+    Array.isArray(patch.blocks) &&
+    patch.blocks.some((b) => b.title || b.content || b.video_url)
+  ) {
+    patch.content = null;
+    patch.video_url = null;
   }
   const { data, error } = await supabaseAdmin
     .from('course_lectures')

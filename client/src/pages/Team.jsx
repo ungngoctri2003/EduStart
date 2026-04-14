@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Card, CardContent, Typography } from '@mui/material';
+import { Alert, Box } from '@mui/material';
 import { PageHeader } from '../components/PageHeader';
+import { TeamMemberGrid } from '../components/TeamMemberGrid';
 import { apiFetch } from '../lib/api';
 import { TEAM_PAGE } from '../strings/vi';
 import { ERR } from '../strings/vi';
@@ -37,37 +38,7 @@ export function Team() {
             {err}
           </Alert>
         ) : null}
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {members.map((m) => (
-            <Card key={m.id} variant="outlined" sx={{ textAlign: 'center', boxShadow: 2 }}>
-              <Box sx={{ px: 3, pt: 3 }}>
-                {m.image_url ? (
-                  <Box
-                    component="img"
-                    src={m.image_url}
-                    alt=""
-                    sx={{ mx: 'auto', height: 112, width: 112, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
-                  />
-                ) : (
-                  <Box sx={{ mx: 'auto', height: 112, width: 112, borderRadius: '50%', bgcolor: 'action.selected' }} />
-                )}
-              </Box>
-              <CardContent>
-                <Typography component="h3" className="font-display text-lg font-bold">
-                  {m.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  {m.role_title}
-                </Typography>
-                {m.bio ? (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                    {m.bio}
-                  </Typography>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <TeamMemberGrid members={members} />
         {!err && members.length === 0 ? (
           <p className="mt-8 text-center text-base-content/60">{TEAM_PAGE.EMPTY}</p>
         ) : null}

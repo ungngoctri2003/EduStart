@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Button, IconButton, Typography } from '@mui/material';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { HOME } from '../strings/vi';
+import { TeamMemberGrid } from '../components/TeamMemberGrid';
+import { apiFetch } from '../lib/api';
+import { HOME, TEAM_PAGE } from '../strings/vi';
 
 const slides = [
   {
@@ -37,10 +39,27 @@ const carouselBtnSx = {
 
 export function Home() {
   const [index, setIndex] = useState(0);
+  const [teamPreview, setTeamPreview] = useState([]);
 
   useEffect(() => {
     const t = window.setInterval(() => setIndex((i) => (i + 1) % slides.length), 6500);
     return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch('/api/team');
+        const list = Array.isArray(data) ? data : [];
+        if (!cancelled) setTeamPreview(list.slice(0, 4));
+      } catch {
+        if (!cancelled) setTeamPreview([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const slide = slides[index];
@@ -137,6 +156,21 @@ export function Home() {
           {HOME.VIEW_ALL_COURSES}
         </Button>
       </section>
+
+      {teamPreview.length > 0 ? (
+        <section className="container mx-auto max-w-6xl px-4 py-14">
+          <div className="text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-primary">{TEAM_PAGE.KICKER}</p>
+            <h2 className="font-display mt-2 text-3xl font-bold text-base-content md:text-4xl">{TEAM_PAGE.H2}</h2>
+          </div>
+          <TeamMemberGrid members={teamPreview} />
+          <div className="mt-8 text-center">
+            <Button component={Link} to="/team" variant="outlined" color="primary" size="large">
+              {HOME.VIEW_ALL_TEAM}
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       <Box
         component="section"
