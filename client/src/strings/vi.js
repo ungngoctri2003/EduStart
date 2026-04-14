@@ -14,12 +14,19 @@ export const NAV = {
   SIGN_IN: '\u0110\u0103ng nh\u1EADp',
 };
 
+/** \u0110\u1ECBa ch\u1EC9 / S\u0110T / email hi\u1EC3n th\u1ECB tr\xEAn trang Li\xEAn h\u1EC7 v\xE0 footer. */
+export const SITE_CONTACT = {
+  ADDRESS: '182 L\u01B0\u01A1ng Th\u1EBF Vinh',
+  PHONE: '0986551191',
+  EMAIL: 'buiquang1901@gmail.com',
+};
+
 export const FOOTER = {
   QUICK_LINKS: 'Li\u00EAn k\u1EBFt nhanh',
   PRIVACY: 'Ch\u00EDnh s\u00E1ch b\u1EA3o m\u1EADt',
   TERMS: '\u0110i\u1EC1u kho\u1EA3n s\u1EED d\u1EE5ng',
   CONTACT_TITLE: 'Li\u00EAn h\u1EC7',
-  ADDRESS: '123 \u0110\u01B0\u1EDDng ABC, Bangalore, Karnataka',
+  ADDRESS: SITE_CONTACT.ADDRESS,
   SHARE: 'Chia s\u1EBB',
   COMMUNITY: 'C\u1ED9ng \u0111\u1ED3ng',
   VIDEO: 'Video',
@@ -179,7 +186,7 @@ export const CONTACT_PAGE = {
   INTRO:
     'Ch\xFAng t\xF4i s\u1EB5n s\xE0ng h\u1ED7 tr\u1EE3 c\xE2u h\u1ECFi v\u1EC1 kh\xF3a h\u1ECDc EduStart, h\u1EE3p t\xE1c hay h\u1ED7 tr\u1EE3 k\u1EF9 thu\u1EADt.',
   OFFICE: 'V\u0103n ph\xF2ng',
-  OFFICE_ADDR: '123 \u0110\u01B0\u1EDDng, Bangalore, Karnataka',
+  OFFICE_ADDR: SITE_CONTACT.ADDRESS,
   MOBILE: 'Di \u0111\u1ED9ng',
   YOUR_NAME: 'H\u1ECD t\xEAn',
   SUBJECT: 'Ti\xEAu \u0111\u1EC1',

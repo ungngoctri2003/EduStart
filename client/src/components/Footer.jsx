@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MapPin, Phone, Mail, Share2, MessageCircle, PlayCircle, Link2 } from 'lucide-react';
 import { Box, Button, Link as MuiLink, Stack, TextField, Typography } from '@mui/material';
-import { FOOTER, NAV } from '../strings/vi';
+import { FOOTER, NAV, SITE_CONTACT } from '../strings/vi';
 
 const footerLinkSx = {
   color: 'inherit',
@@ -67,11 +67,11 @@ export function Footer() {
             </li>
             <li style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Phone size={20} style={{ flexShrink: 0 }} color="var(--mui-palette-primary-main)" />
-              <span>+91 8683045908</span>
+              <span>{SITE_CONTACT.PHONE}</span>
             </li>
             <li style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Mail size={20} style={{ flexShrink: 0 }} color="var(--mui-palette-primary-main)" />
-              <span>edustart@gmail.com</span>
+              <span>{SITE_CONTACT.EMAIL}</span>
             </li>
           </Stack>
           <Stack direction="row" spacing={1} sx={{ mt: 2 }}>

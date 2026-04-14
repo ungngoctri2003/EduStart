@@ -4,9 +4,7 @@ import { MapPin, Phone, Mail } from 'lucide-react';
 import { Box, Button, Card, CardContent, CircularProgress, TextField, Typography } from '@mui/material';
 import { PageHeader } from '../components/PageHeader';
 import { apiFetch } from '../lib/api';
-import { CONTACT_PAGE } from '../strings/vi';
-import { COMMON } from '../strings/vi';
-import { ERR } from '../strings/vi';
+import { CONTACT_PAGE, COMMON, ERR, SITE_CONTACT } from '../strings/vi';
 
 function IconTile({ children }) {
   return (
@@ -80,7 +78,7 @@ export function Contact() {
                 </IconTile>
                 <div>
                   <p className="font-semibold">{CONTACT_PAGE.MOBILE}</p>
-                  <p className="text-sm text-base-content/70">+91 8683045908</p>
+                  <p className="text-sm text-base-content/70">{SITE_CONTACT.PHONE}</p>
                 </div>
               </Box>
               <Box component="li" sx={{ display: 'flex', gap: 2 }}>
@@ -89,7 +87,7 @@ export function Contact() {
                 </IconTile>
                 <div>
                   <p className="font-semibold">{COMMON.EMAIL}</p>
-                  <p className="text-sm text-base-content/70">edustart@gmail.com</p>
+                  <p className="text-sm text-base-content/70">{SITE_CONTACT.EMAIL}</p>
                 </div>
               </Box>
             </Box>
