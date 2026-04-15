@@ -212,6 +212,10 @@ export const ABOUT = {
     'Chúng tôi không ngừng phát triển. Phản hồi từ học viên giúp nâng cấp nền tảng, linh hoạt và sát nhu cầu người dùng.',
   CLOSING:
     'Cảm ơn bạn đã là một phần của EduStart. Cùng nhau, hãy bước trên hành trình học tập suốt đời.',
+  VALUES_TITLE: 'Giá trị cốt lõi',
+  VALUES_LEAD:
+    'Những định hướng giúp EduStart đồng hành cùng bạn trên hành trình học tập.',
+  CTA_JOIN: 'Tham gia EduStart',
 };
 
 export const COURSES_PAGE = {
@@ -381,6 +385,17 @@ export const DASH_STUDENT = {
   LINK_QUIZZES: 'Mở phần bài kiểm tra',
   LOADING_LEARN: 'Đang tải nội dung khóa học…',
   ENROLLED_ON: 'Đăng ký:',
+  SECTION_LEARN_BY_COURSE: 'Nội dung theo từng khóa',
+  SECTION_LEARN_BY_COURSE_SUB: 'Bài giảng và bài kiểm tra trong các khóa bạn đã đăng ký — mở từng khóa để xem chi tiết.',
+  EMPTY_COURSE_CONTENT: 'Khóa này chưa có bài giảng hay bài kiểm tra.',
+  CTA_BROWSE_COURSES: 'Khám phá khóa học',
+  CTA_BROWSE_COURSES_HINT: 'Xem danh mục để chọn và đăng ký khóa phù hợp.',
+  LOAD_ENROLLMENTS_ERROR: 'Không tải được danh sách đăng ký. Bạn có thể tải lại trang hoặc thử lại sau.',
+  SUBHEAD_QUIZZES: 'Trắc nghiệm',
+  SUBHEAD_LECTURES: 'Bài giảng',
+  CHIP_LECTURES: '{n} bài giảng',
+  CHIP_QUIZZES: '{n} bài kiểm tra',
+  EMPTY_LEARN_ALL: 'Các khóa bạn đăng ký chưa có bài giảng hay bài kiểm tra.',
 };
 
 export const DASH_ADMIN = {

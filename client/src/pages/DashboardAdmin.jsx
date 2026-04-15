@@ -55,7 +55,6 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
-import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../context/useAuth';
 import { apiFetch } from '../lib/api';
 import { DASH_ADMIN } from '../strings/vi';
@@ -693,16 +692,20 @@ export function DashboardAdmin() {
 
   return (
     <>
-      <PageHeader title={DASH_ADMIN.TITLE} crumbs={[{ label: DASH_ADMIN.CRUMB, active: true }]} />
       <Box
         sx={{
           bgcolor: 'background.default',
-          py: { xs: 3, md: 5 },
+          py: { xs: 2, md: 3 },
           minHeight: { xs: '50vh', md: '56vh' },
         }}
       >
         <div className="container mx-auto max-w-6xl px-4 pb-2">
-          <AdminShell tab={tab} onTabChange={setTab}>
+          <AdminShell
+            tab={tab}
+            onTabChange={setTab}
+            headerTitle={DASH_ADMIN.TITLE}
+            headerCrumbs={[{ label: DASH_ADMIN.CRUMB, active: true }]}
+          >
             {tab === 'users' && (
               <Stack spacing={3}>
                 <AdminSectionCard title={DASH_ADMIN.USER_STATS_SECTION}>
