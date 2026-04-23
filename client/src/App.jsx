@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
+import { Analytics } from '@vercel/analytics/react';
 import { Toaster } from 'sonner';
 import { AuthProvider } from './context/AuthContext';
 import { appTheme } from './theme';
@@ -27,6 +28,7 @@ export default function App() {
     <ThemeProvider theme={appTheme}>
       <CssBaseline />
       <Toaster position="top-center" theme="light" richColors closeButton />
+      <Analytics />
       <BrowserRouter>
         <AuthProvider>
           <Routes>
