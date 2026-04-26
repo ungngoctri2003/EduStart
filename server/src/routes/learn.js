@@ -68,6 +68,39 @@ r.post('/courses/:slug/quizzes/:quizId/submit', requireAuth, requireRole('studen
   }
 });
 
+r.put('/courses/:slug/reviews', requireAuth, requireRole('student'), async (req, res) => {
+  const rating = Number(req.body?.rating);
+  const commentRaw = req.body?.comment;
+  const comment =
+    typeof commentRaw === 'string' && commentRaw.trim() ? commentRaw.trim().slice(0, 8000) : null;
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'rating must be an integer from 1 to 5' });
+  }
+  try {
+    const gate = await assertStudentEnrolledInCourse(req, req.params.slug);
+    if (gate.error) {
+      return res.status(gate.status).json({ error: gate.error });
+    }
+    const { data, error } = await supabaseAdmin
+      .from('course_reviews')
+      .upsert(
+        {
+          student_id: req.user.id,
+          course_id: gate.course.id,
+          rating,
+          comment,
+        },
+        { onConflict: 'student_id,course_id' },
+      )
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Internal error' });
+  }
+});
+
 r.get('/quiz-attempts/me', requireAuth, requireRole('student'), async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin

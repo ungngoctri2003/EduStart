@@ -11,6 +11,8 @@ import { Home } from './pages/Home';
 import { About } from './pages/About';
 import { Courses } from './pages/Courses';
 import { CourseDetail } from './pages/CourseDetail';
+import { Classes } from './pages/Classes';
+import { ClassDetail } from './pages/ClassDetail';
 import { LectureDetail } from './pages/LectureDetail';
 import { QuizDetail } from './pages/QuizDetail';
 import { Contact } from './pages/Contact';
@@ -22,6 +24,9 @@ import { Signup } from './pages/Signup';
 import { DashboardRedirect } from './pages/DashboardRedirect';
 import { DashboardStudent } from './pages/DashboardStudent';
 import { DashboardAdmin } from './pages/DashboardAdmin';
+import { DashboardTeacher } from './pages/DashboardTeacher';
+import { ClassLectureDetail } from './pages/ClassLectureDetail';
+import { ClassQuizDetail } from './pages/ClassQuizDetail';
 
 function ThemedApp() {
   const { theme, mode } = useColorMode();
@@ -45,6 +50,8 @@ function ThemedApp() {
               <Route path="courses/:slug/lecture/:lectureId" element={<LectureDetail />} />
               <Route path="courses/:slug/quiz/:quizId" element={<QuizDetail />} />
               <Route path="courses/:slug" element={<CourseDetail />} />
+              <Route path="classes" element={<Classes />} />
+              <Route path="classes/:slug" element={<ClassDetail />} />
               <Route path="contact" element={<Contact />} />
               <Route path="team" element={<Team />} />
               <Route path="testimonials" element={<Testimonials />} />
@@ -72,6 +79,30 @@ function ThemedApp() {
                 element={
                   <RoleRoute roles={['admin']}>
                     <DashboardAdmin />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="dashboard/teacher"
+                element={
+                  <RoleRoute roles={['teacher']}>
+                    <DashboardTeacher />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="classroom/:slug/lecture/:lectureId"
+                element={
+                  <RoleRoute roles={['student']}>
+                    <ClassLectureDetail />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="classroom/:slug/quiz/:quizId"
+                element={
+                  <RoleRoute roles={['student']}>
+                    <ClassQuizDetail />
                   </RoleRoute>
                 }
               />

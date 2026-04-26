@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { CourseCatalogCard } from '../components/CourseCatalogCard';
 import { TeamMemberGrid } from '../components/TeamMemberGrid';
-import { VI_TEAM_TEACHERS } from '../data/viTeamTeachers';
 import { apiFetch } from '../lib/api';
 import {
   EASE_NAV,
@@ -61,7 +60,7 @@ const slides = [
     title: HOME.SLIDE2_TITLE,
     text: HOME.SLIDE2_TEXT,
     primary: { to: '/courses', label: HOME.BROWSE_COURSES },
-    secondary: null,
+    secondary: { to: '/classes', label: HOME.BROWSE_CLASSES },
   },
 ];
 
@@ -113,10 +112,9 @@ export function Home() {
       try {
         const data = await apiFetch('/api/team');
         const list = Array.isArray(data) ? data : [];
-        const merged = [...list, ...VI_TEAM_TEACHERS];
-        if (!cancelled) setTeamPreview(merged.slice(0, 4));
+        if (!cancelled) setTeamPreview(list.slice(0, 4));
       } catch {
-        if (!cancelled) setTeamPreview(VI_TEAM_TEACHERS.slice(0, 4));
+        if (!cancelled) setTeamPreview([]);
       }
     })();
     return () => {

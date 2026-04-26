@@ -13,13 +13,15 @@ import {
   DialogTitle,
   Divider,
   Paper,
+  Rating,
   Stack,
   Tab,
   Tabs,
+  TextField,
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { BookOpen, ChevronRight, ClipboardList, ListVideo } from 'lucide-react';
+import { BookOpen, ChevronRight, ClipboardList, ListVideo, MessageCircle, Star } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/useAuth';
@@ -51,6 +53,13 @@ export function CourseDetail() {
   const [nonStudentDialogOpen, setNonStudentDialogOpen] = useState(false);
   const [learnTab, setLearnTab] = useState(0);
   const autoEnrollRunning = useRef(false);
+  const [reviewBundle, setReviewBundle] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewErr, setReviewErr] = useState('');
+  const [reviewFormMsg, setReviewFormMsg] = useState('');
+  const [formRating, setFormRating] = useState(5);
+  const [formComment, setFormComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const reduce = useReducedMotion() ?? false;
 
   const isStudent = profile?.role === 'student';
@@ -140,6 +149,59 @@ export function CourseDetail() {
     if (location.hash === '#lectures-section') setLearnTab(0);
     if (location.hash === '#quizzes-section') setLearnTab(1);
   }, [location.hash]);
+
+  const loadReviews = useCallback(async () => {
+    if (!slug) return;
+    setReviewErr('');
+    setReviewLoading(true);
+    try {
+      const data = await apiFetch(
+        `/api/courses/${encodeURIComponent(slug)}/reviews?limit=40`,
+        {},
+        session?.access_token ?? null,
+      );
+      setReviewBundle(data);
+      if (data?.myReview) {
+        setFormRating(data.myReview.rating);
+        setFormComment(data.myReview.comment || '');
+      } else {
+        setFormRating(5);
+        setFormComment('');
+      }
+    } catch (e) {
+      setReviewErr(e.message || ERR.LOAD);
+      setReviewBundle(null);
+    } finally {
+      setReviewLoading(false);
+    }
+  }, [slug, session?.access_token]);
+
+  useEffect(() => {
+    if (!slug) return;
+    void loadReviews();
+  }, [slug, loadReviews]);
+
+  const submitReview = useCallback(async () => {
+    if (!session?.access_token || !slug) return;
+    setReviewFormMsg('');
+    setReviewSubmitting(true);
+    try {
+      await apiFetch(
+        `/api/learn/courses/${encodeURIComponent(slug)}/reviews`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ rating: formRating, comment: formComment.trim() ? formComment.trim() : null }),
+        },
+        session.access_token,
+      );
+      setReviewFormMsg(COURSE_DETAIL.REVIEW_SAVED);
+      await loadReviews();
+    } catch (e) {
+      setReviewFormMsg(e.data?.error || e.message || COURSE_DETAIL.REVIEW_ERR);
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [session?.access_token, slug, formRating, formComment, loadReviews]);
 
   useEffect(() => {
     if (searchParams.get('enroll') !== '1' || !courseId || !session || !isStudent) return;
@@ -305,6 +367,30 @@ export function CourseDetail() {
               <strong>{COURSE_DETAIL.LEVEL}:</strong> {course.level || '—'} · <strong>{COURSE_DETAIL.DURATION}:</strong>{' '}
               {course.duration_hours != null ? `${course.duration_hours} ${COMMON.HOURS}` : '—'}
             </p>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} sx={{ mt: 1.5, rowGap: 1 }}>
+              {course.review_avg != null ? (
+                <Chip
+                  size="small"
+                  icon={<Star className="h-3.5 w-3.5" aria-hidden style={{ color: 'var(--mui-palette-warning-main)' }} />}
+                  label={`${COURSE_DETAIL.RATING}: ${course.review_avg}`}
+                  variant="outlined"
+                />
+              ) : null}
+              {Number(course.review_count) > 0 ? (
+                <Chip
+                  size="small"
+                  label={`${course.review_count} ${COURSE_DETAIL.REVIEW_VOTES}`}
+                  variant="outlined"
+                />
+              ) : null}
+              {course.enrollment_count != null && course.enrollment_count > 0 ? (
+                <Chip
+                  size="small"
+                  label={`${COURSE_DETAIL.ENROLLMENT_LABEL}: ${course.enrollment_count}`}
+                  variant="outlined"
+                />
+              ) : null}
+            </Stack>
             {msg ? (
               <Alert severity={enrollOk ? 'success' : 'info'} sx={{ mt: 2 }}>
                 {msg}
@@ -329,6 +415,143 @@ export function CourseDetail() {
             </Stack>
           </ScrollSection>
         </div>
+
+        <ScrollSection reduced={reduce} className="w-full" as="section">
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2, sm: 3 },
+              borderRadius: 3,
+              border: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
+            }}
+          >
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap">
+              <MessageCircle className="h-6 w-6 shrink-0 text-primary" aria-hidden />
+              <Typography component="h2" variant="h5" className="font-display" sx={{ fontWeight: 800 }}>
+                {COURSE_DETAIL.SECTION_REVIEWS}
+              </Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {COURSE_DETAIL.REVIEWS_LEAD}
+            </Typography>
+            {reviewErr ? (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {reviewErr}
+              </Alert>
+            ) : null}
+            {reviewLoading && !reviewBundle ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+                <CircularProgress size={24} />
+                <Typography color="text.secondary">{COMMON.LOADING}</Typography>
+              </Box>
+            ) : null}
+            {reviewBundle ? (
+              <>
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} sx={{ mb: 2, rowGap: 1 }}>
+                  {reviewBundle.summary?.review_avg != null && (
+                    <Chip
+                      size="small"
+                      icon={<Star className="h-3.5 w-3.5" style={{ color: 'var(--mui-palette-warning-main)' }} aria-hidden />}
+                      label={`${COURSE_DETAIL.RATING}: ${reviewBundle.summary.review_avg}`}
+                      variant="outlined"
+                    />
+                  )}
+                  <Chip
+                    size="small"
+                    label={`${reviewBundle.summary?.review_count ?? 0} ${COURSE_DETAIL.REVIEW_VOTES}`}
+                    variant="outlined"
+                  />
+                </Stack>
+                {isStudent && isEnrolled ? (
+                  <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'action.hover' }}>
+                    <Typography fontWeight={700} sx={{ mb: 1.5 }}>
+                      {COURSE_DETAIL.YOUR_REVIEW}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      {COURSE_DETAIL.STARS}
+                    </Typography>
+                    <Rating
+                      name="course-review-rating"
+                      value={formRating}
+                      onChange={(_, v) => setFormRating(v ?? 5)}
+                      size="large"
+                      sx={{ mb: 1.5 }}
+                    />
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={3}
+                      label={COURSE_DETAIL.COMMENT}
+                      value={formComment}
+                      onChange={(e) => setFormComment(e.target.value)}
+                    />
+                    {reviewFormMsg ? (
+                      <Alert severity={reviewFormMsg === COURSE_DETAIL.REVIEW_SAVED ? 'success' : 'error'} sx={{ mt: 2 }}>
+                        {reviewFormMsg}
+                      </Alert>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="contained"
+                      color="primary"
+                      disabled={reviewSubmitting}
+                      onClick={() => void submitReview()}
+                      sx={{ mt: 2 }}
+                    >
+                      {reviewSubmitting ? COURSE_DETAIL.SAVING_REVIEW : COURSE_DETAIL.SUBMIT_REVIEW}
+                    </Button>
+                  </Paper>
+                ) : isStudent && !isEnrolled ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    {COURSE_DETAIL.REVIEW_MUST_ENROLL}
+                  </Alert>
+                ) : !session ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    {COURSE_DETAIL.REVIEW_GUEST}
+                  </Alert>
+                ) : (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    {COURSE_DETAIL.ONLY_STUDENT}
+                  </Alert>
+                )}
+                {reviewBundle.items?.length > 0 ? (
+                  <Stack spacing={1.5}>
+                    {reviewBundle.items.map((rv) => (
+                      <Paper
+                        key={rv.id}
+                        variant="outlined"
+                        sx={{ p: 2, borderRadius: 2, bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.06 : 0.04) }}
+                      >
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={1}>
+                          <Typography fontWeight={700}>{rv.author_name}</Typography>
+                          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'warning.main' }}>
+                            {Array.from({ length: rv.rating }).map((_, i) => (
+                              <Star key={i} className="h-4 w-4 fill-current" aria-hidden />
+                            ))}
+                          </Stack>
+                        </Stack>
+                        {rv.comment ? (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            {rv.comment}
+                          </Typography>
+                        ) : null}
+                        <Typography variant="caption" color="text.disabled" sx={{ mt: 0.5, display: 'block' }}>
+                          {rv.created_at ? new Date(rv.created_at).toLocaleString('vi-VN') : ''}
+                        </Typography>
+                      </Paper>
+                    ))}
+                  </Stack>
+                ) : !reviewLoading ? (
+                  <Typography color="text.secondary" sx={{ py: 1 }}>
+                    {COURSE_DETAIL.NO_REVIEWS}
+                  </Typography>
+                ) : null}
+              </>
+            ) : null}
+          </Paper>
+        </ScrollSection>
 
         <Divider sx={{ my: 6 }} />
 

@@ -26,5 +26,6 @@ export function DashboardRedirect() {
     );
   }
   if (profile.role === 'admin') return <Navigate to="/dashboard/admin" replace />;
+  if (profile.role === 'teacher') return <Navigate to="/dashboard/teacher" replace />;
   return <Navigate to="/dashboard/student" replace />;
 }

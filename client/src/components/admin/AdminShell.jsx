@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom';
-import { BarChart3, BookOpen, ListChecks, Users } from 'lucide-react';
+import { BarChart3, BookOpen, LayoutList, ListChecks, School, Users } from 'lucide-react';
 import { Box, Breadcrumbs, Divider, Link as MuiLink, Paper, Tab, Tabs, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { DASH_ADMIN, PAGE } from '../../strings/vi';
 
-const TAB_KEYS = ['users', 'courses', 'enrollments', 'quiz_stats'];
+const TAB_KEYS = ['users', 'classes', 'courses', 'enrollments', 'quiz_stats', 'content'];
 
 const TAB_ICONS = {
   users: <Users size={18} strokeWidth={2} aria-hidden />,
+  classes: <School size={18} strokeWidth={2} aria-hidden />,
   courses: <BookOpen size={18} strokeWidth={2} aria-hidden />,
   enrollments: <BarChart3 size={18} strokeWidth={2} aria-hidden />,
   quiz_stats: <ListChecks size={18} strokeWidth={2} aria-hidden />,
+  content: <LayoutList size={18} strokeWidth={2} aria-hidden />,
 };
 
 /**

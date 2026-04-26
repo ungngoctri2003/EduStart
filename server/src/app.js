@@ -7,6 +7,9 @@ import contactRoutes from './routes/contact.js';
 import enrollRoutes from './routes/enrollments.js';
 import learnRoutes from './routes/learn.js';
 import adminRoutes from './routes/admin.js';
+import teacherRoutes from './routes/teacher.js';
+import classLearnRoutes from './routes/classLearn.js';
+import classEnrollmentsRoutes from './routes/classEnrollments.js';
 import meRoutes from './routes/me.js';
 
 function resolveClientOrigin() {
@@ -38,6 +41,9 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/enrollments', enrollRoutes);
 app.use('/api/learn', learnRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/class-learn', classLearnRoutes);
+app.use('/api/class-enrollments', classEnrollmentsRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -1,10 +1,20 @@
 import { Link } from 'react-router-dom';
-import { Star, Users, Gauge, Clock, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronRight, GraduationCap, Users } from 'lucide-react';
 import { Box, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from '@mui/material';
-import { COURSES_PAGE, COMMON } from '../strings/vi';
+import { CLASSES_PAGE } from '../strings/vi';
 
-export function CourseCatalogCard({ course }) {
-  const categoryName = course.categories?.name;
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('vi-VN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return '—';
+  }
+}
+
+export function ClassCatalogCard({ klass }) {
+  const teacher = klass.teacher_name;
+  const n = klass.student_count;
 
   return (
     <Card
@@ -21,15 +31,15 @@ export function CourseCatalogCard({ course }) {
           boxShadow: (t) => t.shadows[5],
           borderColor: 'primary.main',
         },
-        '& .MuiCardActionArea-root:hover .courses-card-media': {
-          transform: 'scale(1.06)',
+        '& .MuiCardActionArea-root:hover .class-card-media': {
+          transform: 'scale(1.04)',
         },
       }}
     >
       <CardActionArea
         component={Link}
-        to={`/courses/${course.slug}`}
-        aria-label={`${COURSES_PAGE.VIEW_COURSE_ARIA}: ${course.title}`}
+        to={`/classes/${klass.slug}`}
+        aria-label={`${CLASSES_PAGE.VIEW_CLASS_ARIA}: ${klass.name}`}
         sx={{
           flex: 1,
           display: 'flex',
@@ -48,9 +58,9 @@ export function CourseCatalogCard({ course }) {
           }}
         >
           <CardMedia
-            className="courses-card-media"
+            className="class-card-media"
             component="img"
-            image={course.thumbnail_url || '/img/course-1.png'}
+            image="/img/banner-3.jpg"
             alt=""
             sx={{
               height: '100%',
@@ -63,7 +73,7 @@ export function CourseCatalogCard({ course }) {
             sx={{
               position: 'absolute',
               inset: 0,
-              background: 'linear-gradient(180deg, transparent 45%, rgba(28,36,51,0.55) 100%)',
+              background: 'linear-gradient(180deg, transparent 40%, rgba(28,36,51,0.6) 100%)',
               pointerEvents: 'none',
             }}
           />
@@ -73,19 +83,17 @@ export function CourseCatalogCard({ course }) {
             sx={{ position: 'absolute', left: 12, top: 12, flexWrap: 'wrap', gap: 0.75 }}
             useFlexGap
           >
-            {categoryName ? (
-              <Chip
-                label={categoryName}
-                size="small"
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.92)',
-                  color: 'secondary.main',
-                  fontWeight: 700,
-                  fontSize: '0.7rem',
-                  height: 26,
-                }}
-              />
-            ) : null}
+            <Chip
+              label={CLASSES_PAGE.TITLE}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.92)',
+                color: 'primary.main',
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                height: 26,
+              }}
+            />
           </Stack>
         </Box>
         <CardContent
@@ -114,36 +122,28 @@ export function CourseCatalogCard({ course }) {
               minHeight: '2.7rem',
             }}
           >
-            {course.title}
+            {klass.name}
           </Typography>
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} sx={{ rowGap: 1 }}>
-            <Chip
-              icon={<Star size={14} style={{ color: 'inherit' }} aria-hidden />}
-              label={
-                course.review_avg != null
-                  ? String(course.review_avg)
-                  : course.rating != null
-                    ? String(course.rating)
-                    : '—'
-              }
-              size="small"
-              variant="outlined"
-              sx={{ borderColor: 'divider', '& .MuiChip-icon': { color: 'warning.main' } }}
-            />
+            {teacher ? (
+              <Chip
+                icon={<GraduationCap size={14} aria-hidden />}
+                label={teacher}
+                size="small"
+                variant="outlined"
+                sx={{ borderColor: 'divider', maxWidth: '100%', '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }}
+              />
+            ) : null}
             <Chip
               icon={<Users size={14} aria-hidden />}
-              label={
-                course.enrollment_count != null && course.enrollment_count > 0
-                  ? String(course.enrollment_count)
-                  : course.learners_count || '—'
-              }
+              label={n != null && n > 0 ? String(n) : '—'}
               size="small"
               variant="outlined"
               sx={{ borderColor: 'divider' }}
             />
             <Chip
-              icon={<Gauge size={14} aria-hidden />}
-              label={course.level || COMMON.ALL_LEVELS}
+              icon={<Calendar size={14} aria-hidden />}
+              label={fmtDate(klass.starts_at)}
               size="small"
               variant="outlined"
               sx={{ borderColor: 'divider' }}
@@ -161,12 +161,19 @@ export function CourseCatalogCard({ course }) {
               borderColor: 'divider',
             }}
           >
-            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Clock size={16} aria-hidden />
-              {course.duration_hours != null ? `${course.duration_hours} ${COMMON.HOURS}` : '—'}
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {(() => {
+                if (!klass.description) return '—';
+                const t = String(klass.description).replace(/\s+/g, ' ').trim();
+                return t.length > 72 ? `${t.slice(0, 72)}…` : t;
+              })()}
             </Typography>
-            <Typography variant="body2" color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25, fontWeight: 800 }}>
-              {COURSES_PAGE.OPEN_COURSE}
+            <Typography
+              variant="body2"
+              color="primary"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.25, fontWeight: 800, flexShrink: 0 }}
+            >
+              {CLASSES_PAGE.OPEN_CLASS}
               <ChevronRight size={18} aria-hidden />
             </Typography>
           </Box>

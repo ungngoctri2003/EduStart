@@ -101,6 +101,10 @@ export function DashboardStudent() {
   const [learnLoading, setLearnLoading] = useState(false);
   const [quizAttempts, setQuizAttempts] = useState([]);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [classMemberships, setClassMemberships] = useState([]);
+  const [classMembershipsLoading, setClassMembershipsLoading] = useState(false);
+  const [classQuizAttempts, setClassQuizAttempts] = useState([]);
+  const [classAttemptsLoading, setClassAttemptsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +131,7 @@ export function DashboardStudent() {
     let cancelled = false;
     if (!session?.access_token) {
       setQuizAttempts([]);
+      setClassQuizAttempts([]);
       return () => {
         cancelled = true;
       };
@@ -147,6 +152,63 @@ export function DashboardStudent() {
         }
       } finally {
         if (!cancelled) setAttemptsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!session?.access_token) {
+      setClassMemberships([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void Promise.resolve().then(() => {
+      if (!cancelled) setClassMembershipsLoading(true);
+    });
+    (async () => {
+      try {
+        const data = await apiFetch('/api/class-learn/me', {}, session.access_token);
+        if (!cancelled) setClassMemberships(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (!cancelled) {
+          setClassMemberships([]);
+          toast.error(e.message || DASH_STUDENT.LOAD_CLASSES_ERROR);
+        }
+      } finally {
+        if (!cancelled) setClassMembershipsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!session?.access_token) {
+      setClassQuizAttempts([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void Promise.resolve().then(() => {
+      if (!cancelled) setClassAttemptsLoading(true);
+    });
+    (async () => {
+      try {
+        const data = await apiFetch('/api/class-learn/quiz-attempts/me', {}, session.access_token);
+        if (!cancelled) setClassQuizAttempts(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) {
+          setClassQuizAttempts([]);
+        }
+      } finally {
+        if (!cancelled) setClassAttemptsLoading(false);
       }
     })();
     return () => {
@@ -225,20 +287,40 @@ export function DashboardStudent() {
     return { lectures, quizzes };
   }, [slugsOrdered, learnBySlug]);
 
+  const allQuizAttempts = useMemo(() => {
+    const course = (quizAttempts || []).map((a) => ({
+      ...a,
+      _kind: 'course',
+      _label: a.course_title,
+      _slug: a.course_slug,
+    }));
+    const klass = (classQuizAttempts || []).map((a) => ({
+      ...a,
+      _kind: 'classroom',
+      _label: a.class_name,
+      _slug: a.class_slug,
+    }));
+    return [...klass, ...course].sort((x, y) => {
+      const tx = x.submitted_at ? new Date(x.submitted_at).getTime() : 0;
+      const ty = y.submitted_at ? new Date(y.submitted_at).getTime() : 0;
+      return ty - tx;
+    });
+  }, [quizAttempts, classQuizAttempts]);
+
   const latestAttemptByQuizId = useMemo(() => {
     const map = new Map();
-    for (const a of quizAttempts) {
+    for (const a of allQuizAttempts) {
       if (!a.quiz_id || map.has(a.quiz_id)) continue;
       map.set(a.quiz_id, a);
     }
     return map;
-  }, [quizAttempts]);
+  }, [allQuizAttempts]);
 
   const quizAttemptStats = useMemo(() => {
-    const n = quizAttempts.length;
-    const avg = n === 0 ? 0 : Math.round(quizAttempts.reduce((s, a) => s + (a.percent ?? 0), 0) / n);
+    const n = allQuizAttempts.length;
+    const avg = n === 0 ? 0 : Math.round(allQuizAttempts.reduce((s, a) => s + (a.percent ?? 0), 0) / n);
     return { count: n, avgPercent: avg };
-  }, [quizAttempts]);
+  }, [allQuizAttempts]);
 
   const hasEnrollments = rows.length > 0;
   const statGridSx = {
@@ -270,7 +352,7 @@ export function DashboardStudent() {
           {DASH_STUDENT.SECTION_QUIZ_HISTORY_SUB}
         </Typography>
       </Box>
-      {attemptsLoading ? (
+      {attemptsLoading || classAttemptsLoading ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 3 }}>
           <CircularProgress size={22} color="primary" />
           <Typography variant="body2" color="text.secondary">
@@ -278,12 +360,12 @@ export function DashboardStudent() {
           </Typography>
         </Box>
       ) : null}
-      {!attemptsLoading && quizAttempts.length === 0 ? (
+      {!attemptsLoading && !classAttemptsLoading && allQuizAttempts.length === 0 ? (
         <Typography color="text.secondary" variant="body2" sx={{ p: 2.5 }}>
           {DASH_STUDENT.EMPTY_QUIZ_HISTORY}
         </Typography>
       ) : null}
-      {!attemptsLoading && quizAttempts.length > 0 ? (
+      {!attemptsLoading && !classAttemptsLoading && allQuizAttempts.length > 0 ? (
         <Box sx={{ overflowX: 'auto' }}>
           <Table size="small" sx={{ minWidth: 280 }}>
           <TableHead>
@@ -295,22 +377,31 @@ export function DashboardStudent() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {quizAttempts.slice(0, 25).map((a) => (
+            {allQuizAttempts.slice(0, 25).map((a) => (
               <TableRow
-                key={a.id}
+                key={`${a._kind}-${a.id}`}
                 sx={{
                   '&:nth-of-type(even)': { bgcolor: 'action.hover' },
                   '&:last-child td': { borderBottom: 0 },
                 }}
               >
                 <TableCell sx={{ maxWidth: 140, py: 1.25 }}>
-                  <Typography variant="body2" noWrap title={a.course_title || undefined}>
-                    {a.course_title || '—'}
+                  <Typography variant="body2" noWrap title={a._label || undefined}>
+                    {a._label || '—'}
                   </Typography>
                 </TableCell>
                 <TableCell sx={{ py: 1.25 }}>
-                  {a.course_slug && a.quiz_id ? (
-                    <MuiLink component={Link} to={`/courses/${a.course_slug}/quiz/${encodeURIComponent(a.quiz_id)}`} fontWeight={600} variant="body2">
+                  {a._kind === 'classroom' && a._slug && a.quiz_id ? (
+                    <MuiLink
+                      component={Link}
+                      to={`/classroom/${encodeURIComponent(a._slug)}/quiz/${encodeURIComponent(a.quiz_id)}`}
+                      fontWeight={600}
+                      variant="body2"
+                    >
+                      {a.quiz_title || '—'}
+                    </MuiLink>
+                  ) : a._kind === 'course' && a._slug && a.quiz_id ? (
+                    <MuiLink component={Link} to={`/courses/${a._slug}/quiz/${encodeURIComponent(a.quiz_id)}`} fontWeight={600} variant="body2">
                       {a.quiz_title || '—'}
                     </MuiLink>
                   ) : (
@@ -402,14 +493,94 @@ export function DashboardStudent() {
             icon={<History size={22} strokeWidth={2} aria-hidden />}
             label={DASH_STUDENT.STAT_QUIZ_ATTEMPTS}
             value={quizAttemptStats.count}
-            loading={attemptsLoading}
+            loading={attemptsLoading || classAttemptsLoading}
           />
           <StatTile
             icon={<Award size={22} strokeWidth={2} aria-hidden />}
             label={DASH_STUDENT.STAT_QUIZ_AVG}
             value={quizAttemptStats.count ? `${quizAttemptStats.avgPercent}%` : '—'}
-            loading={attemptsLoading}
+            loading={attemptsLoading || classAttemptsLoading}
           />
+        </Box>
+
+        <Box id="my-classes" sx={{ mt: 3 }}>
+          <Typography variant="h6" component="h2" sx={{ fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif", fontWeight: 700 }}>
+            {DASH_STUDENT.SECTION_MY_CLASSES}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+            {DASH_STUDENT.SECTION_MY_CLASSES_SUB}
+          </Typography>
+          {classMembershipsLoading ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+              <CircularProgress size={22} />
+              <Typography variant="body2" color="text.secondary">
+                {COMMON.LOADING}
+              </Typography>
+            </Box>
+          ) : classMemberships.length === 0 ? (
+            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: 'divider' }}>
+              <Typography color="text.secondary" variant="body2">
+                {DASH_STUDENT.EMPTY_CLASSES}
+              </Typography>
+              <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mt: 1 }}>
+                {DASH_STUDENT.CTA_BROWSE_CLASSES_HINT}
+              </Typography>
+              <Button component={Link} to="/classes" variant="outlined" color="primary" sx={{ mt: 2 }}>
+                {DASH_STUDENT.CTA_BROWSE_CLASSES}
+              </Button>
+            </Paper>
+          ) : (
+            <Stack spacing={2}>
+              {classMemberships.map((m) => {
+                const c = m.class;
+                if (!c?.slug) return null;
+                const nLec = m.counts?.lectures ?? 0;
+                const nQz = m.counts?.quizzes ?? 0;
+                return (
+                  <Paper key={c.id} elevation={0} sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider' }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ sm: 'center' }}>
+                      <Box>
+                        <Typography fontWeight={800}>{c.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {DASH_STUDENT.CHIP_LECTURES.replace('{n}', String(nLec))} · {DASH_STUDENT.CHIP_QUIZZES.replace('{n}', String(nQz))}
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={nLec === 0}
+                          onClick={() => {
+                            void (async () => {
+                              try {
+                                const pack = await apiFetch(
+                                  `/api/class-learn/classes/${encodeURIComponent(c.slug)}`,
+                                  {},
+                                  session?.access_token,
+                                );
+                                const first = pack?.lectures?.[0];
+                                if (first?.id) {
+                                  window.location.assign(
+                                    `/classroom/${encodeURIComponent(c.slug)}/lecture/${encodeURIComponent(first.id)}`,
+                                  );
+                                } else {
+                                  toast.error(DASH_STUDENT.EMPTY_LECTURES);
+                                }
+                              } catch {
+                                toast.error(ERR.LOAD);
+                              }
+                            })();
+                          }}
+                        >
+                          {DASH_STUDENT.CLASS_LINK_LEARN}
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          )}
         </Box>
 
         <Box

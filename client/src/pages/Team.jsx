@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { Alert, Box } from '@mui/material';
 import { PageHeader } from '../components/PageHeader';
 import { TeamMemberGrid } from '../components/TeamMemberGrid';
 import { ScrollSection } from '../motion/ScrollBlock';
-import { VI_TEAM_TEACHERS } from '../data/viTeamTeachers';
 import { apiFetch } from '../lib/api';
 import { TEAM_PAGE } from '../strings/vi';
 import { ERR } from '../strings/vi';
@@ -13,8 +12,6 @@ export function Team() {
   const reduce = useReducedMotion() ?? false;
   const [members, setMembers] = useState([]);
   const [err, setErr] = useState('');
-
-  const displayMembers = useMemo(() => [...(members || []), ...VI_TEAM_TEACHERS], [members]);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +43,10 @@ export function Team() {
         ) : null}
         <Box sx={{ mt: 4 }}>
           <ScrollSection reduced={reduce}>
-            <TeamMemberGrid members={displayMembers} />
+            <TeamMemberGrid members={members} />
           </ScrollSection>
         </Box>
-        {!err && displayMembers.length === 0 ? (
+        {!err && members.length === 0 ? (
           <p className="mt-8 text-center text-base-content/60">{TEAM_PAGE.EMPTY}</p>
         ) : null}
       </div>

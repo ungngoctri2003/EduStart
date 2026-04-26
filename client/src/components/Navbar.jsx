@@ -118,6 +118,9 @@ export function Navbar() {
       <Button component={NavLink} to="/courses" sx={navButtonSx} onClick={closeMobile}>
         {NAV.COURSES}
       </Button>
+      <Button component={NavLink} to="/classes" sx={navButtonSx} onClick={closeMobile}>
+        {NAV.CLASSES}
+      </Button>
       <Button component={NavLink} to="/team" sx={navButtonSx} onClick={closeMobile}>
         {NAV.TEAM}
       </Button>
