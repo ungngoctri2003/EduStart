@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
-import { Calendar, ChevronRight, GraduationCap, Users } from 'lucide-react';
+import { BadgeCheck, Calendar, ChevronRight, Clock, GraduationCap, Users } from 'lucide-react';
 import { Box, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from '@mui/material';
 import { classCoverUrl } from '../lib/classCoverUrl';
-import { CLASSES_PAGE } from '../strings/vi';
+import { CATALOG_BADGES, CLASSES_PAGE } from '../strings/vi';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -13,9 +13,14 @@ function fmtDate(iso) {
   }
 }
 
-export function ClassCatalogCard({ klass }) {
+/**
+ * @param {{ klass: object, paymentStatus?: string | null }} props
+ */
+export function ClassCatalogCard({ klass, paymentStatus = null }) {
   const teacher = klass.teacher_name;
   const n = klass.student_count;
+  const showApproved = paymentStatus === 'approved';
+  const showPending = paymentStatus === 'pending';
 
   return (
     <Card
@@ -96,6 +101,42 @@ export function ClassCatalogCard({ klass }) {
               }}
             />
           </Stack>
+          {showApproved ? (
+            <Chip
+              icon={<BadgeCheck size={14} aria-hidden />}
+              label={CATALOG_BADGES.CLASS_JOINED}
+              size="small"
+              color="success"
+              sx={{
+                position: 'absolute',
+                right: 12,
+                top: 12,
+                fontWeight: 800,
+                fontSize: '0.7rem',
+                height: 28,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                '& .MuiChip-icon': { color: 'inherit' },
+              }}
+            />
+          ) : null}
+          {showPending ? (
+            <Chip
+              icon={<Clock size={14} aria-hidden />}
+              label={CATALOG_BADGES.PENDING}
+              size="small"
+              color="warning"
+              sx={{
+                position: 'absolute',
+                right: 12,
+                top: 12,
+                fontWeight: 800,
+                fontSize: '0.7rem',
+                height: 28,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                '& .MuiChip-icon': { color: 'inherit' },
+              }}
+            />
+          ) : null}
         </Box>
         <CardContent
           sx={{

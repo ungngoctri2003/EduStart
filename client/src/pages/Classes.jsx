@@ -5,10 +5,12 @@ import { ClassCatalogCard } from '../components/ClassCatalogCard';
 import { PageHeader } from '../components/PageHeader';
 import { StaggerContainer, StaggerItem } from '../motion/ScrollBlock';
 import { apiFetch } from '../lib/api';
+import { useStudentCatalogAccess } from '../hooks/useStudentCatalogAccess';
 import { CLASSES_PAGE, ERR } from '../strings/vi';
 
 export function Classes() {
   const reduce = useReducedMotion() ?? false;
+  const { classPaymentById } = useStudentCatalogAccess();
   const [rows, setRows] = useState([]);
   const [err, setErr] = useState('');
 
@@ -46,7 +48,7 @@ export function Classes() {
         <StaggerContainer reduced={reduce} className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((k) => (
             <StaggerItem reduced={reduce} key={k.id}>
-              <ClassCatalogCard klass={k} />
+              <ClassCatalogCard klass={k} paymentStatus={classPaymentById.get(k.id) ?? null} />
             </StaggerItem>
           ))}
         </StaggerContainer>

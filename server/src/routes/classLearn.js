@@ -24,6 +24,7 @@ async function assertStudentInClass(req, slug) {
     .select('id')
     .eq('class_id', klass.id)
     .eq('student_id', req.user.id)
+    .eq('payment_status', 'approved')
     .maybeSingle();
   if (mErr) return { error: mErr.message, status: 500 };
   if (!row) return { error: 'NOT_IN_CLASS', status: 403 };
@@ -37,6 +38,9 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
       .select(
         `
         joined_at,
+        payment_status,
+        payment_method,
+        payment_note,
         classes ( id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url )
       `,
       )
@@ -62,6 +66,9 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
     }
     const list = mem.map((m) => ({
       joined_at: m.joined_at,
+      payment_status: m.payment_status,
+      payment_method: m.payment_method,
+      payment_note: m.payment_note,
       class: m.classes,
       counts: {
         lectures: m.classes?.id ? lecBy.get(m.classes.id) || 0 : 0,

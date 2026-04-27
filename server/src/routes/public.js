@@ -113,7 +113,7 @@ async function enrichPublicClassRows(rows) {
   const tids = [...new Set(list.map((c) => c.teacher_id).filter(Boolean))];
 
   const [stRes, profRes] = await Promise.all([
-    supabaseAdmin.from('class_students').select('class_id').in('class_id', ids),
+    supabaseAdmin.from('class_students').select('class_id').in('class_id', ids).eq('payment_status', 'approved'),
     tids.length
       ? supabaseAdmin.from('profiles').select('id, full_name').in('id', tids)
       : Promise.resolve({ data: [] }),

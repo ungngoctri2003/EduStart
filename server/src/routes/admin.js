@@ -477,10 +477,56 @@ function enrollmentStatsFromRows(list) {
   return { byCourse, byDay };
 }
 
+/** Dữ liệu theo dòng thanh toán: trạng thái, phương thức, timeline 30 ngày (UTC) */
+function paymentQueueStatsFromRows(list, dateKey) {
+  const byStatus = { pending: 0, approved: 0, rejected: 0 };
+  const byMethod = { cash: 0, bank_transfer: 0, momo: 0, vnpay: 0, unset: 0 };
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const byDayMap = new Map();
+  for (let i = 29; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    byDayMap.set(d.toISOString().slice(0, 10), 0);
+  }
+  for (const row of list) {
+    const s = row.payment_status;
+    if (s === 'pending' || s === 'approved' || s === 'rejected') {
+      byStatus[s] = (byStatus[s] || 0) + 1;
+    }
+    const pm = row.payment_method;
+    if (pm === 'cash' || pm === 'bank_transfer' || pm === 'momo' || pm === 'vnpay') {
+      byMethod[pm] = (byMethod[pm] || 0) + 1;
+    } else {
+      byMethod.unset = (byMethod.unset || 0) + 1;
+    }
+    const raw = row[dateKey];
+    if (!raw) continue;
+    const key = new Date(raw).toISOString().slice(0, 10);
+    if (byDayMap.has(key)) byDayMap.set(key, (byDayMap.get(key) || 0) + 1);
+  }
+  const byStatusList = [
+    { status: 'pending', count: byStatus.pending },
+    { status: 'approved', count: byStatus.approved },
+    { status: 'rejected', count: byStatus.rejected },
+  ];
+  const byMethodList = [
+    { method: 'cash', count: byMethod.cash },
+    { method: 'bank_transfer', count: byMethod.bank_transfer },
+    { method: 'momo', count: byMethod.momo },
+    { method: 'vnpay', count: byMethod.vnpay },
+    { method: 'unset', count: byMethod.unset },
+  ];
+  const byDay = [...byDayMap.entries()].map(([d, c]) => ({ day: d, count: c }));
+  const total = byStatus.pending + byStatus.approved + byStatus.rejected;
+  return { total, byStatus: byStatusList, byMethod: byMethodList, byDay };
+}
+
 r.get('/enrollments/stats', async (_req, res) => {
   const { data: rows, error } = await supabaseAdmin
     .from('enrollments')
-    .select('enrolled_at, course_id, courses(id, title, slug)');
+    .select('enrolled_at, course_id, courses(id, title, slug)')
+    .eq('payment_status', 'approved');
   if (error) return res.status(500).json({ error: error.message });
   const list = rows || [];
   res.json({ stats: enrollmentStatsFromRows(list) });
@@ -491,12 +537,154 @@ r.get('/enrollments', async (req, res) => {
   const courseId = typeof req.query.courseId === 'string' && req.query.courseId.trim() ? req.query.courseId.trim() : null;
   let q = supabaseAdmin
     .from('enrollments')
-    .select('id, enrolled_at, student_id, course_id, courses(id, title, slug), profiles(id, full_name, email)', { count: 'exact' })
+    .select(
+      'id, enrolled_at, student_id, course_id, payment_method, payment_status, payment_note, reviewed_at, reviewed_by, courses(id, title, slug), student:profiles!enrollments_student_id_fkey(id, full_name, email)',
+      { count: 'exact' },
+    )
     .order('enrolled_at', { ascending: false });
   if (courseId) q = q.eq('course_id', courseId);
   const { data: rows, error, count } = await q.range(from, to);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ enrollments: rows || [], total: count ?? 0, page, pageSize });
+});
+
+r.get('/payments/stats', async (_req, res) => {
+  const [cRes, clRes] = await Promise.all([
+    supabaseAdmin.from('enrollments').select('enrolled_at, payment_status, payment_method'),
+    supabaseAdmin.from('class_students').select('joined_at, payment_status, payment_method'),
+  ]);
+  if (cRes.error) return res.status(500).json({ error: cRes.error.message });
+  if (clRes.error) return res.status(500).json({ error: clRes.error.message });
+  const courseRows = cRes.data || [];
+  const classRows = clRes.data || [];
+  res.json({
+    coursePayments: paymentQueueStatsFromRows(courseRows, 'enrolled_at'),
+    classPayments: paymentQueueStatsFromRows(classRows, 'joined_at'),
+  });
+});
+
+r.get('/payments/courses', async (req, res) => {
+  const statusRaw = req.query.status;
+  const status =
+    statusRaw === undefined || statusRaw === null || statusRaw === ''
+      ? 'pending'
+      : String(statusRaw);
+  if (status !== 'all' && status !== 'pending' && status !== 'approved' && status !== 'rejected') {
+    return res.status(400).json({ error: 'status must be pending, approved, rejected, or all' });
+  }
+  const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 200 });
+  let q = supabaseAdmin
+    .from('enrollments')
+    .select(
+      `
+      id,
+      enrolled_at,
+      student_id,
+      course_id,
+      payment_method,
+      payment_status,
+      payment_note,
+      reviewed_at,
+      reviewed_by,
+      student:profiles!enrollments_student_id_fkey ( id, full_name, email ),
+      courses ( id, title, slug, price_cents )
+    `,
+      { count: 'exact' },
+    )
+    .order('enrolled_at', { ascending: false });
+  if (status !== 'all') q = q.eq('payment_status', status);
+  const { data: rows, error, count } = await q.range(from, to);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ items: rows || [], total: count ?? 0, page, pageSize });
+});
+
+r.get('/payments/classes', async (req, res) => {
+  const statusRaw = req.query.status;
+  const status =
+    statusRaw === undefined || statusRaw === null || statusRaw === ''
+      ? 'pending'
+      : String(statusRaw);
+  if (status !== 'all' && status !== 'pending' && status !== 'approved' && status !== 'rejected') {
+    return res.status(400).json({ error: 'status must be pending, approved, rejected, or all' });
+  }
+  const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 200 });
+  let q = supabaseAdmin
+    .from('class_students')
+    .select(
+      `
+      id,
+      joined_at,
+      student_id,
+      class_id,
+      payment_method,
+      payment_status,
+      payment_note,
+      reviewed_at,
+      reviewed_by,
+      student:profiles!class_students_student_id_fkey ( id, full_name, email ),
+      classes ( id, name, slug )
+    `,
+      { count: 'exact' },
+    )
+    .order('joined_at', { ascending: false });
+  if (status !== 'all') q = q.eq('payment_status', status);
+  const { data: rows, error, count } = await q.range(from, to);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ items: rows || [], total: count ?? 0, page, pageSize });
+});
+
+r.patch('/payments/courses/:enrollmentId', async (req, res) => {
+  const { enrollmentId } = req.params;
+  const payment_status = req.body?.payment_status;
+  if (payment_status !== 'approved' && payment_status !== 'rejected') {
+    return res.status(400).json({ error: 'payment_status must be approved or rejected' });
+  }
+  const { data: existing, error: exErr } = await supabaseAdmin
+    .from('enrollments')
+    .select('id')
+    .eq('id', enrollmentId)
+    .maybeSingle();
+  if (exErr) return res.status(500).json({ error: exErr.message });
+  if (!existing) return res.status(404).json({ error: 'Enrollment not found' });
+  const { data, error } = await supabaseAdmin
+    .from('enrollments')
+    .update({
+      payment_status,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: req.user.id,
+    })
+    .eq('id', enrollmentId)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+r.patch('/payments/classes/:classStudentId', async (req, res) => {
+  const { classStudentId } = req.params;
+  const payment_status = req.body?.payment_status;
+  if (payment_status !== 'approved' && payment_status !== 'rejected') {
+    return res.status(400).json({ error: 'payment_status must be approved or rejected' });
+  }
+  const { data: existing, error: exErr } = await supabaseAdmin
+    .from('class_students')
+    .select('id')
+    .eq('id', classStudentId)
+    .maybeSingle();
+  if (exErr) return res.status(500).json({ error: exErr.message });
+  if (!existing) return res.status(404).json({ error: 'Class membership not found' });
+  const { data, error } = await supabaseAdmin
+    .from('class_students')
+    .update({
+      payment_status,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: req.user.id,
+    })
+    .eq('id', classStudentId)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
 const QUIZ_ATTEMPT_SELECT = `
@@ -1067,7 +1255,10 @@ r.get('/classes/:classId/students', async (req, res) => {
   const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 200 });
   const { data, error, count } = await supabaseAdmin
     .from('class_students')
-    .select('id, joined_at, student_id, profiles ( id, full_name, email, role )', { count: 'exact' })
+    .select(
+      'id, joined_at, student_id, student:profiles!class_students_student_id_fkey ( id, full_name, email, role )',
+      { count: 'exact' },
+    )
     .eq('class_id', classId)
     .order('joined_at', { ascending: false })
     .range(from, to);
@@ -1091,7 +1282,7 @@ r.post('/classes/:classId/students', async (req, res) => {
   if (profile.role !== 'student') return res.status(400).json({ error: 'User is not a student' });
   const { data, error } = await supabaseAdmin
     .from('class_students')
-    .insert({ class_id: classId, student_id: studentId })
+    .insert({ class_id: classId, student_id: studentId, payment_status: 'approved' })
     .select()
     .single();
   if (error) {

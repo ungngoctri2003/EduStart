@@ -11,10 +11,14 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Paper,
+  Radio,
+  RadioGroup,
   Stack,
   Tab,
   Tabs,
+  TextField,
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
@@ -23,9 +27,7 @@ import { PageHeader } from '../components/PageHeader';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/useAuth';
 import { ImageReveal, ScrollSection } from '../motion/ScrollBlock';
-import { CLASS_DETAIL, COURSE_DETAIL } from '../strings/vi';
-import { COMMON } from '../strings/vi';
-import { ERR } from '../strings/vi';
+import { CLASS_DETAIL, COURSE_DETAIL, PAYMENT, COMMON, ERR } from '../strings/vi';
 import { classCoverUrl } from '../lib/classCoverUrl';
 
 function stripEnrollSearch(pathname, search) {
@@ -61,12 +63,20 @@ export function ClassDetail() {
   const [learnTab, setLearnTab] = useState(0);
   const [learnPack, setLearnPack] = useState({ lectures: [], quizzes: [], schedules: [] });
   const autoEnrollRunning = useRef(false);
+  const [paymentChoiceOpen, setPaymentChoiceOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
+  const [paymentNote, setPaymentNote] = useState('');
   const reduce = useReducedMotion() ?? false;
 
   const isStudent = profile?.role === 'student';
   const classId = klass?.id;
-  const isInClass =
-    Boolean(classId) && Array.isArray(myClasses) && myClasses.some((m) => m.class?.id === classId);
+  const classMembership =
+    Boolean(classId) && Array.isArray(myClasses) ? myClasses.find((m) => m.class?.id === classId) ?? null : null;
+  const hasApprovedAccess =
+    Boolean(classMembership) &&
+    (classMembership.payment_status === 'approved' || classMembership.payment_status == null);
+  const hasPendingEnrollment = classMembership?.payment_status === 'pending';
+  const hasRejectedEnrollment = classMembership?.payment_status === 'rejected';
 
   const fetchLearnContent = useCallback(async () => {
     if (!slug || !session?.access_token || !isStudent) return;
@@ -136,9 +146,9 @@ export function ClassDetail() {
   }, [classId, session?.access_token, session, isStudent]);
 
   useEffect(() => {
-    if (!isInClass || !isStudent || !slug || !session?.access_token) return;
+    if (!hasApprovedAccess || !isStudent || !slug || !session?.access_token) return;
     void fetchLearnContent();
-  }, [isInClass, isStudent, slug, session?.access_token, fetchLearnContent]);
+  }, [hasApprovedAccess, isStudent, slug, session?.access_token, fetchLearnContent]);
 
   useEffect(() => {
     return () => {
@@ -159,33 +169,28 @@ export function ClassDetail() {
     autoEnrollRunning.current = true;
 
     const cleanPath = stripEnrollSearch(location.pathname, location.search);
-    const joined = myClasses.some((m) => m.class?.id === classId);
+    const row = myClasses.find((m) => m.class?.id === classId);
 
     (async () => {
       try {
-        if (!joined) {
-          try {
-            await apiFetch(
-              '/api/class-enrollments',
-              { method: 'POST', body: JSON.stringify({ class_id: classId }) },
-              session.access_token,
-            );
-            setMsg(CLASS_DETAIL.ENROLL_SUCCESS);
-          } catch (e) {
-            if (e.status === 409) {
-              setMsg(CLASS_DETAIL.ENROLL_SUCCESS);
-            } else {
-              setMsg(e.data?.error || e.message || ERR.ENROLL_CLASS_FAILED);
-            }
-          }
-          await refreshMyClasses();
+        if (row?.payment_status === 'approved' || (row && row.payment_status == null)) {
+          navigate(cleanPath, { replace: true });
+          return;
         }
+        if (row?.payment_status === 'pending') {
+          setMsg(PAYMENT.PENDING_MSG);
+          navigate(cleanPath, { replace: true });
+          return;
+        }
+        setPaymentMethod('bank_transfer');
+        setPaymentNote('');
+        setPaymentChoiceOpen(true);
         navigate(cleanPath, { replace: true });
       } finally {
         autoEnrollRunning.current = false;
       }
     })();
-  }, [searchParams, classId, session, isStudent, myClasses, location.pathname, location.search, navigate, refreshMyClasses]);
+  }, [searchParams, classId, session, isStudent, myClasses, location.pathname, location.search, navigate]);
 
   const returnPathForAuth = slug ? `/classes/${slug}?enroll=1` : '/dashboard';
 
@@ -199,10 +204,12 @@ export function ClassDetail() {
       setNonStudentDialogOpen(true);
       return;
     }
-    void enroll();
+    setPaymentMethod('bank_transfer');
+    setPaymentNote('');
+    setPaymentChoiceOpen(true);
   }
 
-  async function enroll() {
+  async function confirmPaymentEnroll() {
     setMsg('');
     if (!session) {
       setEnrollDialogOpen(true);
@@ -215,19 +222,43 @@ export function ClassDetail() {
     if (!klass?.id) return;
     setEnrolling(true);
     try {
-      await apiFetch(
+      const res = await apiFetch(
         '/api/class-enrollments',
-        { method: 'POST', body: JSON.stringify({ class_id: klass.id }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            class_id: klass.id,
+            payment_method: paymentMethod,
+            payment_note: paymentNote.trim() ? paymentNote.trim() : null,
+          }),
+        },
         session.access_token,
       );
-      setMsg(CLASS_DETAIL.ENROLL_SUCCESS);
-      await refreshMyClasses();
-      await fetchLearnContent();
-    } catch (e) {
-      if (e.status === 409) {
+      const st = res?.payment_status;
+      if (st === 'approved') {
         setMsg(CLASS_DETAIL.ENROLL_SUCCESS);
         await refreshMyClasses();
         await fetchLearnContent();
+      } else {
+        setMsg(PAYMENT.PENDING_MSG);
+        await refreshMyClasses();
+      }
+      setPaymentChoiceOpen(false);
+    } catch (e) {
+      if (e.status === 409) {
+        const st = e.data?.payment_status;
+        if (st === 'approved') {
+          setMsg(CLASS_DETAIL.ENROLL_SUCCESS);
+          await refreshMyClasses();
+          await fetchLearnContent();
+          setPaymentChoiceOpen(false);
+        } else if (st === 'pending') {
+          setMsg(PAYMENT.ALREADY_PENDING);
+          await refreshMyClasses();
+          setPaymentChoiceOpen(false);
+        } else {
+          setMsg(e.data?.error || e.message || ERR.ENROLL_CLASS_FAILED);
+        }
       } else {
         setMsg(e.data?.error || e.message || ERR.ENROLL_CLASS_FAILED);
       }
@@ -275,12 +306,16 @@ export function ClassDetail() {
   }
 
   const enrollOk = msg === CLASS_DETAIL.ENROLL_SUCCESS;
+  const enrollPendingInfo = msg === PAYMENT.PENDING_MSG || msg === PAYMENT.ALREADY_PENDING;
   const lectures = learnPack.lectures;
   const quizzes = learnPack.quizzes;
   const schedules = learnPack.schedules;
-  const locked = !isInClass || !isStudent;
-  const showContent = isStudent && isInClass && !contentLoading;
-  const showContentSpinner = isStudent && isInClass && contentLoading;
+  const locked = !hasApprovedAccess || !isStudent;
+  const showContent = isStudent && hasApprovedAccess && !contentLoading;
+  const showContentSpinner = isStudent && hasApprovedAccess && contentLoading;
+  const lockedLearnHint = hasPendingEnrollment ? PAYMENT.PENDING_CLASS_LOCK : CLASS_DETAIL.LOCKED_HINT;
+  const lockedQuizHint = hasPendingEnrollment ? PAYMENT.PENDING_CLASS_LOCK : CLASS_DETAIL.LOCKED_QUIZZES;
+  const lockedScheduleHint = hasPendingEnrollment ? PAYMENT.PENDING_CLASS_LOCK : CLASS_DETAIL.LOCKED_SCHEDULE;
   const teacherName = klass.teacher_name;
 
   return (
@@ -339,26 +374,37 @@ export function ClassDetail() {
               />
             </Stack>
             {msg ? (
-              <Alert severity={enrollOk ? 'success' : 'info'} sx={{ mt: 2 }}>
+              <Alert severity={enrollOk ? 'success' : enrollPendingInfo ? 'info' : 'warning'} sx={{ mt: 2 }}>
                 {msg}
               </Alert>
             ) : null}
+            {isStudent && hasPendingEnrollment && !msg ? (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                {PAYMENT.PENDING_MSG}
+              </Alert>
+            ) : null}
+            {isStudent && hasRejectedEnrollment && !msg ? (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                {PAYMENT.REJECTED_HINT}
+              </Alert>
+            ) : null}
             <Stack direction="row" spacing={2} sx={{ mt: 3 }} flexWrap="wrap" useFlexGap>
-              {isStudent && isInClass ? (
+              {isStudent && hasApprovedAccess ? (
                 <Button type="button" variant="outlined" color="primary" component={Link} to="/dashboard/student#my-classes">
                   {CLASS_DETAIL.GO_DASHBOARD}
                 </Button>
               ) : null}
-              {isStudent && isInClass ? (
+              {isStudent && hasApprovedAccess ? (
                 <Button type="button" variant="text" color="primary" href="#class-learn" sx={{ alignSelf: 'center' }}>
                   {CLASS_DETAIL.GO_STUDY}
                 </Button>
-              ) : (
+              ) : null}
+              {isStudent && !hasApprovedAccess && !hasPendingEnrollment ? (
                 <Button type="button" variant="contained" color="primary" disabled={enrolling} onClick={openEnrollFlow}>
                   {enrolling ? <CircularProgress size={22} color="inherit" sx={{ mr: 1 }} /> : null}
                   {enrolling ? CLASS_DETAIL.ENROLLING : CLASS_DETAIL.ENROLL}
                 </Button>
-              )}
+              ) : null}
             </Stack>
           </ScrollSection>
         </div>
@@ -432,7 +478,7 @@ export function ClassDetail() {
                 ) : null}
                 {locked && !showContentSpinner ? (
                   <Alert severity="info" sx={{ borderRadius: 2 }}>
-                    {CLASS_DETAIL.LOCKED_HINT}
+                    {lockedLearnHint}
                   </Alert>
                 ) : null}
                 {showContent && lectures.length === 0 ? (
@@ -508,7 +554,7 @@ export function ClassDetail() {
               >
                 {locked && !showContentSpinner ? (
                   <Alert severity="info" sx={{ borderRadius: 2 }}>
-                    {CLASS_DETAIL.LOCKED_QUIZZES}
+                    {lockedQuizHint}
                   </Alert>
                 ) : null}
                 {showContent && quizzes.length === 0 ? (
@@ -583,7 +629,7 @@ export function ClassDetail() {
               >
                 {locked && !showContentSpinner ? (
                   <Alert severity="info" sx={{ borderRadius: 2 }}>
-                    {CLASS_DETAIL.LOCKED_SCHEDULE}
+                    {lockedScheduleHint}
                   </Alert>
                 ) : null}
                 {showContent && schedules.length === 0 ? (
@@ -646,6 +692,42 @@ export function ClassDetail() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setNonStudentDialogOpen(false)}>{COMMON.CANCEL}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={paymentChoiceOpen}
+        onClose={() => !enrolling && setPaymentChoiceOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{PAYMENT.DIALOG_TITLE}</DialogTitle>
+        <DialogContent>
+          <RadioGroup value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+            <FormControlLabel value="cash" control={<Radio />} label={PAYMENT.METHOD_CASH} />
+            <FormControlLabel value="bank_transfer" control={<Radio />} label={PAYMENT.METHOD_BANK} />
+            <FormControlLabel value="momo" control={<Radio />} label={PAYMENT.METHOD_MOMO} />
+            <FormControlLabel value="vnpay" control={<Radio />} label={PAYMENT.METHOD_VNPAY} />
+          </RadioGroup>
+          <TextField
+            fullWidth
+            size="small"
+            margin="dense"
+            label={PAYMENT.NOTE_LABEL}
+            helperText={PAYMENT.NOTE_HELPER}
+            value={paymentNote}
+            onChange={(e) => setPaymentNote(e.target.value)}
+            sx={{ mt: 1.5 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, flexWrap: 'wrap', gap: 1 }}>
+          <Button onClick={() => setPaymentChoiceOpen(false)} disabled={enrolling}>
+            {COMMON.CANCEL}
+          </Button>
+          <Button variant="contained" onClick={() => void confirmPaymentEnroll()} disabled={enrolling}>
+            {enrolling ? <CircularProgress size={22} color="inherit" sx={{ mr: 1 }} /> : null}
+            {PAYMENT.CONFIRM}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

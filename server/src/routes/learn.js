@@ -19,6 +19,7 @@ async function assertStudentEnrolledInCourse(req, slug) {
     .select('id')
     .eq('student_id', req.user.id)
     .eq('course_id', course.id)
+    .eq('payment_status', 'approved')
     .maybeSingle();
   if (eErr) return { error: eErr.message, status: 500 };
   if (!enr) return { error: 'NOT_ENROLLED', status: 403 };

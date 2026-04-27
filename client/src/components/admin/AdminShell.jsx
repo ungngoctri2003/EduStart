@@ -1,15 +1,16 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, LayoutList, School, Users } from 'lucide-react';
+import { BookOpen, CreditCard, LayoutList, School, Users } from 'lucide-react';
 import { Box, Breadcrumbs, Divider, Link as MuiLink, Paper, Tab, Tabs, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { DASH_ADMIN, PAGE } from '../../strings/vi';
 
-const TAB_KEYS = ['users', 'classes', 'courses', 'content'];
+const TAB_KEYS = ['users', 'classes', 'courses', 'payments', 'content'];
 
 const TAB_ICONS = {
   users: <Users size={18} strokeWidth={2} aria-hidden />,
   classes: <School size={18} strokeWidth={2} aria-hidden />,
   courses: <BookOpen size={18} strokeWidth={2} aria-hidden />,
+  payments: <CreditCard size={18} strokeWidth={2} aria-hidden />,
   content: <LayoutList size={18} strokeWidth={2} aria-hidden />,
 };
 

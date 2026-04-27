@@ -936,8 +936,8 @@ export function DashboardTeacher() {
                           ) : (
                             roster.map((r) => (
                               <TableRow key={r.id} sx={adminBodyRowSx}>
-                                <TableCell>{r.profiles?.full_name || '—'}</TableCell>
-                                <TableCell>{r.profiles?.email || '—'}</TableCell>
+                                <TableCell>{r.student?.full_name || '—'}</TableCell>
+                                <TableCell>{r.student?.email || '—'}</TableCell>
                                 <TableCell align="right">
                                   <Button size="small" color="error" onClick={() => removeStudent(r.student_id)}>
                                     {COMMON.DELETE}

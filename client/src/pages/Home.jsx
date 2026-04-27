@@ -28,6 +28,7 @@ import { ClassCatalogCard } from '../components/ClassCatalogCard';
 import { CourseCatalogCard } from '../components/CourseCatalogCard';
 import { TeamMemberGrid } from '../components/TeamMemberGrid';
 import { apiFetch } from '../lib/api';
+import { useStudentCatalogAccess } from '../hooks/useStudentCatalogAccess';
 import {
   EASE_NAV,
   getHeroBg,
@@ -90,6 +91,7 @@ const FEATURED_COURSE_COUNT = 6;
 const FEATURED_HOME_CLASS_COUNT = 3;
 
 export function Home() {
+  const { coursePaymentById, classPaymentById } = useStudentCatalogAccess();
   const [index, setIndex] = useState(0);
   const [teamPreview, setTeamPreview] = useState([]);
   const [categoriesPreview, setCategoriesPreview] = useState([]);
@@ -585,7 +587,7 @@ export function Home() {
           >
             {featuredCourses.map((course) => (
               <motion.div key={course.id} variants={sItem} className="min-h-0">
-                <CourseCatalogCard course={course} />
+                <CourseCatalogCard course={course} paymentStatus={coursePaymentById.get(course.id) ?? null} />
               </motion.div>
             ))}
           </motion.div>
@@ -636,7 +638,7 @@ export function Home() {
         >
           {featuredClasses.map((klass) => (
             <motion.div key={klass.id} variants={sItem} className="min-h-0">
-              <ClassCatalogCard klass={klass} />
+              <ClassCatalogCard klass={klass} paymentStatus={classPaymentById.get(klass.id) ?? null} />
             </motion.div>
           ))}
         </motion.div>

@@ -5,10 +5,12 @@ import { PageHeader } from '../components/PageHeader';
 import { CourseCatalogCard } from '../components/CourseCatalogCard';
 import { StaggerContainer, StaggerItem } from '../motion/ScrollBlock';
 import { apiFetch } from '../lib/api';
+import { useStudentCatalogAccess } from '../hooks/useStudentCatalogAccess';
 import { COURSES_PAGE, ERR } from '../strings/vi';
 
 export function Courses() {
   const reduce = useReducedMotion() ?? false;
+  const { coursePaymentById } = useStudentCatalogAccess();
   const [courses, setCourses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [err, setErr] = useState('');
@@ -102,7 +104,7 @@ export function Courses() {
         <StaggerContainer reduced={reduce} className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-3">
           {courses.map((course) => (
             <StaggerItem reduced={reduce} key={course.id}>
-              <CourseCatalogCard course={course} />
+              <CourseCatalogCard course={course} paymentStatus={coursePaymentById.get(course.id) ?? null} />
             </StaggerItem>
           ))}
         </StaggerContainer>

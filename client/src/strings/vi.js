@@ -248,6 +248,32 @@ export const CLASSES_PAGE = {
   OPEN_CLASS: 'Xem lớp',
 };
 
+/** Badge trên thẻ danh mục khi học viên đã đăng ký / chờ duyệt (chỉ hiện khi đã đăng nhập học viên). */
+export const CATALOG_BADGES = {
+  COURSE_ENROLLED: 'Đã đăng ký',
+  CLASS_JOINED: 'Đã tham gia',
+  PENDING: 'Chờ xác nhận',
+};
+
+/** Chọn phương thức thanh toán khi đăng ký khóa / lớp (xác nhận thủ công bởi admin). */
+export const PAYMENT = {
+  DIALOG_TITLE: 'Chọn phương thức thanh toán',
+  NOTE_LABEL: 'Ghi chú (mã GD, nội dung chuyển khoản…)',
+  NOTE_HELPER: 'Giúp quản trị đối soát nhanh hơn.',
+  CONFIRM: 'Xác nhận',
+  METHOD_CASH: 'Tiền mặt',
+  METHOD_BANK: 'Chuyển khoản ngân hàng',
+  METHOD_MOMO: 'Ví MoMo',
+  METHOD_VNPAY: 'VNPAY',
+  PENDING_MSG: 'Đã gửi yêu cầu. Vui lòng hoàn tất thanh toán (nếu cần) và chờ quản trị viên xác nhận.',
+  REJECTED_HINT: 'Yêu cầu trước đó chưa được chấp nhận. Bạn có thể chọn phương thức và gửi lại.',
+  ALREADY_PENDING: 'Bạn đã có yêu cầu đang chờ duyệt.',
+  PENDING_COURSE_LOCK:
+    'Bạn đã đăng ký và đang chờ xác nhận thanh toán. Nội dung khóa học sẽ mở sau khi được duyệt.',
+  PENDING_CLASS_LOCK:
+    'Bạn đã gửi tham gia lớp và đang chờ xác nhận thanh toán. Nội dung lớp sẽ mở sau khi được duyệt.',
+};
+
 export const CLASS_DETAIL = {
   TITLE_FALLBACK: 'Lớp học',
   CRUMB: 'Lớp học',
@@ -545,10 +571,40 @@ export const DASH_ADMIN = {
     users: 'Người dùng',
     classes: 'Lớp học',
     courses: 'Khóa học',
+    payments: 'Thanh toán',
     enrollments: 'Đăng ký khóa học',
     quiz_stats: 'Bài kiểm tra',
     content: 'Đội ngũ & đánh giá',
   },
+  PAYMENTS_LEAD: 'Phê duyệt thanh toán đăng ký khóa học và tham gia lớp.',
+  PAYMENTS_SUB_COURSES: 'Khóa học',
+  PAYMENTS_SUB_CLASSES: 'Lớp học',
+  PAYMENTS_FILTER_STATUS: 'Trạng thái',
+  PAYMENTS_STATUS_PENDING: 'Chờ duyệt',
+  PAYMENTS_STATUS_APPROVED: 'Đã duyệt',
+  PAYMENTS_STATUS_REJECTED: 'Từ chối',
+  PAYMENTS_STATUS_ALL: 'Tất cả',
+  PAYMENTS_TH_STUDENT: 'Học viên',
+  PAYMENTS_TH_EMAIL: 'Email',
+  PAYMENTS_TH_TARGET: 'Khóa / lớp',
+  PAYMENTS_TH_METHOD: 'Phương thức',
+  PAYMENTS_TH_AMOUNT: 'Giá',
+  PAYMENTS_TH_DATE: 'Ngày gửi',
+  PAYMENTS_TH_STATUS: 'Trạng thái',
+  PAYMENTS_TH_NOTE: 'Ghi chú',
+  PAYMENTS_TH_ACTIONS: 'Thao tác',
+  PAYMENTS_APPROVE: 'Duyệt',
+  PAYMENTS_REJECT: 'Từ chối',
+  PAYMENTS_EMPTY: 'Không có bản ghi.',
+  PAYMENTS_STATS_SECTION: 'Thống kê thanh toán',
+  PAYMENTS_CHART_BY_STATUS: 'Theo trạng thái',
+  PAYMENTS_CHART_BY_METHOD: 'Theo phương thức thanh toán',
+  PAYMENTS_CHART_BY_DAY: 'Bản ghi theo ngày (30 ngày)',
+  PAYMENTS_CHART_LEGEND_RECORDS: 'Số bản ghi',
+  PAYMENTS_CHART_CAPTION: 'Tổng {n} bản ghi thanh toán',
+  PAYMENTS_METHOD_UNSET: 'Không khai báo / khác',
+  PAYMENTS_PRICE_NONE: '—',
+  PAYMENTS_TOAST_UPDATED: 'Đã cập nhật trạng thái thanh toán.',
   /** Mục con trong tab Khóa học (đăng ký & bài kiểm tra nằm dưới đây). */
   COURSE_AREA_OVERVIEW: 'Khóa học & nội dung',
   TABLE_PAGINATION_LABEL_ROWS: 'Dòng mỗi trang',

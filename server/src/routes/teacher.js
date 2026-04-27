@@ -499,7 +499,10 @@ r.get('/classes/:slug/students', async (req, res) => {
   const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 200 });
   const { data, error, count } = await supabaseAdmin
     .from('class_students')
-    .select('id, joined_at, student_id, profiles ( id, full_name, email, role )', { count: 'exact' })
+    .select(
+      'id, joined_at, student_id, student:profiles!class_students_student_id_fkey ( id, full_name, email, role )',
+      { count: 'exact' },
+    )
     .eq('class_id', gate.klass.id)
     .order('joined_at', { ascending: false })
     .range(from, to);

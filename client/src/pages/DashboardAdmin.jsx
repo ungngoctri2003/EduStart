@@ -62,7 +62,22 @@ import { apiFetch } from '../lib/api';
 import { newQuizFormRow as newQuizQuestion, quizFormRowsFromApi, buildQuizPayloadFromFormRows } from '../lib/classQuizForm.js';
 import { newLectureBlock, blocksFromLectureForForm, countLectureBlocks, normalizeBlocksForApi } from '../lib/lectureBlocksForm.js';
 import { AdminLectureBlocksEditor } from '../components/admin/AdminLectureBlocksEditor.jsx';
-import { DASH_ADMIN, COMMON, ERR, DASH_TEACHER, TEAM_PAGE, TESTI_PAGE, CONTACT_PAGE } from '../strings/vi';
+import { DASH_ADMIN, PAYMENT, COMMON, ERR, DASH_TEACHER, TEAM_PAGE, TESTI_PAGE, CONTACT_PAGE } from '../strings/vi';
+
+function adminPayMethodLabel(m) {
+  if (m === 'cash') return PAYMENT.METHOD_CASH;
+  if (m === 'bank_transfer') return PAYMENT.METHOD_BANK;
+  if (m === 'momo') return PAYMENT.METHOD_MOMO;
+  if (m === 'vnpay') return PAYMENT.METHOD_VNPAY;
+  return '\u2014';
+}
+
+function adminPayStatusLabel(s) {
+  if (s === 'pending') return DASH_ADMIN.PAYMENTS_STATUS_PENDING;
+  if (s === 'approved') return DASH_ADMIN.PAYMENTS_STATUS_APPROVED;
+  if (s === 'rejected') return DASH_ADMIN.PAYMENTS_STATUS_REJECTED;
+  return s || '\u2014';
+}
 
 function toLocalYMD(iso) {
   const x = new Date(iso);
@@ -204,7 +219,7 @@ const INITIAL_COURSE_FORM = {
 };
 
 /** Must match `TAB_KEYS` in `AdminShell.jsx` */
-const ADMIN_TAB_KEYS = ['users', 'classes', 'courses', 'content'];
+const ADMIN_TAB_KEYS = ['users', 'classes', 'courses', 'payments', 'content'];
 
 export function DashboardAdmin() {
   const theme = useTheme();
@@ -228,6 +243,11 @@ export function DashboardAdmin() {
     if (a === 'enrollments' || a === 'quiz_stats') return a;
     return 'overview';
   }, [searchParams]);
+  const paymentsArea = useMemo(() => {
+    if (tab !== 'payments') return 'courses';
+    const p = searchParams.get('paymentsArea');
+    return p === 'classes' ? 'classes' : 'courses';
+  }, [tab, searchParams]);
   const setTab = useCallback(
     (v) => {
       if (!ADMIN_TAB_KEYS.includes(v)) return;
@@ -235,11 +255,30 @@ export function DashboardAdmin() {
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete('courseArea');
+          if (v === 'payments') {
+            if (!next.get('paymentsArea')) next.set('paymentsArea', 'courses');
+          } else {
+            next.delete('paymentsArea');
+          }
           if (v === 'users') {
             next.delete('tab');
           } else {
             next.set('tab', v);
           }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  const setPaymentsArea = useCallback(
+    (area) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('tab', 'payments');
+          next.set('paymentsArea', area === 'classes' ? 'classes' : 'courses');
           return next;
         },
         { replace: true },
@@ -334,6 +373,19 @@ export function DashboardAdmin() {
   const [enrollPage, setEnrollPage] = useState(0);
   const [enrollPageSize, setEnrollPageSize] = useState(15);
   const [enrollCourseFilter, setEnrollCourseFilter] = useState('');
+
+  const [payCourseItems, setPayCourseItems] = useState([]);
+  const [payCourseTotal, setPayCourseTotal] = useState(0);
+  const [payCoursePage, setPayCoursePage] = useState(0);
+  const [payCoursePageSize, setPayCoursePageSize] = useState(15);
+  const [payCourseStatus, setPayCourseStatus] = useState('pending');
+  const [payClassItems, setPayClassItems] = useState([]);
+  const [payClassTotal, setPayClassTotal] = useState(0);
+  const [payClassPage, setPayClassPage] = useState(0);
+  const [payClassPageSize, setPayClassPageSize] = useState(15);
+  const [payClassStatus, setPayClassStatus] = useState('pending');
+  const [payStats, setPayStats] = useState(null);
+  const [payStatsLoading, setPayStatsLoading] = useState(false);
 
   const [quizAnSummary, setQuizAnSummary] = useState(null);
   const [quizAnItems, setQuizAnItems] = useState([]);
@@ -544,6 +596,56 @@ export function DashboardAdmin() {
     });
   }, [contentStats]);
 
+  const payCourseChartByStatus = useMemo(() => {
+    const rows = payStats?.coursePayments?.byStatus;
+    if (!rows?.length) return [];
+    return rows.map((r) => ({ name: adminPayStatusLabel(r.status), count: r.count }));
+  }, [payStats]);
+
+  const payClassChartByStatus = useMemo(() => {
+    const rows = payStats?.classPayments?.byStatus;
+    if (!rows?.length) return [];
+    return rows.map((r) => ({ name: adminPayStatusLabel(r.status), count: r.count }));
+  }, [payStats]);
+
+  const payCourseChartByMethod = useMemo(() => {
+    const rows = payStats?.coursePayments?.byMethod;
+    if (!rows?.length) return [];
+    return rows.map((r) => ({
+      name: r.method === 'unset' ? DASH_ADMIN.PAYMENTS_METHOD_UNSET : adminPayMethodLabel(r.method),
+      count: r.count,
+    }));
+  }, [payStats]);
+
+  const payClassChartByMethod = useMemo(() => {
+    const rows = payStats?.classPayments?.byMethod;
+    if (!rows?.length) return [];
+    return rows.map((r) => ({
+      name: r.method === 'unset' ? DASH_ADMIN.PAYMENTS_METHOD_UNSET : adminPayMethodLabel(r.method),
+      count: r.count,
+    }));
+  }, [payStats]);
+
+  const payCourseLineData = useMemo(() => {
+    const rows = payStats?.coursePayments?.byDay;
+    if (!rows?.length) return [];
+    return rows.map((r) => {
+      const p = String(r.day || '').split('-');
+      const dayLabel = p.length === 3 ? `${p[2]}/${p[1]}` : r.day;
+      return { ...r, dayLabel };
+    });
+  }, [payStats]);
+
+  const payClassLineData = useMemo(() => {
+    const rows = payStats?.classPayments?.byDay;
+    if (!rows?.length) return [];
+    return rows.map((r) => {
+      const p = String(r.day || '').split('-');
+      const dayLabel = p.length === 3 ? `${p[2]}/${p[1]}` : r.day;
+      return { ...r, dayLabel };
+    });
+  }, [payStats]);
+
   const classDetailPickerOptions = useMemo(() => {
     if (!classDetailRow) return classesItems;
     const has = classesItems.some((c) => c.id === classDetailRow.id);
@@ -718,6 +820,46 @@ export function DashboardAdmin() {
       pageSize: list.pageSize ?? enrollPageSize,
     });
   }, [token, enrollPage, enrollPageSize, enrollCourseFilter]);
+
+  const loadPaymentCourses = useCallback(async () => {
+    if (!token) return;
+    const p = payCoursePage + 1;
+    const q = new URLSearchParams({
+      page: String(p),
+      pageSize: String(payCoursePageSize),
+      status: payCourseStatus,
+    });
+    const data = await apiFetch(`/api/admin/payments/courses?${q}`, {}, token);
+    setPayCourseItems(data.items || []);
+    setPayCourseTotal(data.total ?? 0);
+  }, [token, payCoursePage, payCoursePageSize, payCourseStatus]);
+
+  const loadPaymentClasses = useCallback(async () => {
+    if (!token) return;
+    const p = payClassPage + 1;
+    const q = new URLSearchParams({
+      page: String(p),
+      pageSize: String(payClassPageSize),
+      status: payClassStatus,
+    });
+    const data = await apiFetch(`/api/admin/payments/classes?${q}`, {}, token);
+    setPayClassItems(data.items || []);
+    setPayClassTotal(data.total ?? 0);
+  }, [token, payClassPage, payClassPageSize, payClassStatus]);
+
+  const loadPaymentStats = useCallback(async () => {
+    if (!token) return;
+    setPayStatsLoading(true);
+    try {
+      const data = await apiFetch('/api/admin/payments/stats', {}, token);
+      setPayStats(data);
+    } catch (e) {
+      toast.error(e.message || ERR.LOAD_FAILED);
+      setPayStats(null);
+    } finally {
+      setPayStatsLoading(false);
+    }
+  }, [token]);
 
   const loadQuizAnalytics = useCallback(async () => {
     if (!token) return;
@@ -932,6 +1074,27 @@ export function DashboardAdmin() {
     if (tab !== 'content' || cmsSubTab !== 'contact' || !token) return;
     void loadCmsContacts();
   }, [tab, cmsSubTab, token, loadCmsContacts]);
+
+  useEffect(() => {
+    if (tab !== 'payments' || !token) return;
+    void loadPaymentStats();
+  }, [tab, token, loadPaymentStats]);
+
+  useEffect(() => {
+    if (tab !== 'payments' || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (paymentsArea === 'classes') await loadPaymentClasses();
+        else await loadPaymentCourses();
+      } catch (e) {
+        if (!cancelled) toast.error(e.message || ERR.LOAD_FAILED);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, paymentsArea, token, loadPaymentCourses, loadPaymentClasses]);
 
   useEffect(() => {
     if (tab !== 'classes' || !token) return;
@@ -1756,6 +1919,38 @@ export function DashboardAdmin() {
     }
   }
 
+  async function patchPaymentCourseRow(id, paymentStatus) {
+    if (!token) return;
+    try {
+      await apiFetch(
+        `/api/admin/payments/courses/${id}`,
+        { method: 'PATCH', body: JSON.stringify({ payment_status: paymentStatus }) },
+        token,
+      );
+      toast.success(DASH_ADMIN.PAYMENTS_TOAST_UPDATED);
+      await loadPaymentCourses();
+      await loadPaymentStats();
+    } catch (err) {
+      toast.error(err.data?.error || err.message);
+    }
+  }
+
+  async function patchPaymentClassRow(id, paymentStatus) {
+    if (!token) return;
+    try {
+      await apiFetch(
+        `/api/admin/payments/classes/${id}`,
+        { method: 'PATCH', body: JSON.stringify({ payment_status: paymentStatus }) },
+        token,
+      );
+      toast.success(DASH_ADMIN.PAYMENTS_TOAST_UPDATED);
+      await loadPaymentClasses();
+      await loadPaymentStats();
+    } catch (err) {
+      toast.error(err.data?.error || err.message);
+    }
+  }
+
   return (
     <>
       <Box
@@ -2214,8 +2409,8 @@ export function DashboardAdmin() {
                             <TableBody>
                               {classStudents.map((r) => (
                                 <TableRow key={r.id} sx={adminBodyRowSx}>
-                                  <TableCell>{r.profiles?.full_name || '—'}</TableCell>
-                                  <TableCell>{r.profiles?.email || '—'}</TableCell>
+                                  <TableCell>{r.student?.full_name || '—'}</TableCell>
+                                  <TableCell>{r.student?.email || '—'}</TableCell>
                                   <TableCell align="right">
                                     <Button
                                       type="button"
@@ -3399,8 +3594,8 @@ export function DashboardAdmin() {
                   {(enrollReport?.enrollments || []).map((row) => (
                     <TableRow key={row.id} sx={adminBodyRowSx}>
                       <TableCell sx={{ fontWeight: 600 }}>{row.courses?.title || '\u2014'}</TableCell>
-                      <TableCell>{row.profiles?.full_name || '\u2014'}</TableCell>
-                      <TableCell>{row.profiles?.email || '\u2014'}</TableCell>
+                      <TableCell>{row.student?.full_name || '\u2014'}</TableCell>
+                      <TableCell>{row.student?.email || '\u2014'}</TableCell>
                       <TableCell>
                         {row.enrolled_at ? new Date(row.enrolled_at).toLocaleString() : '\u2014'}
                       </TableCell>
@@ -3432,6 +3627,431 @@ export function DashboardAdmin() {
               </Stack>
                 )}
               </>
+            )}
+
+            {tab === 'payments' && (
+              <Stack spacing={2.5}>
+                <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 720 }}>
+                  {DASH_ADMIN.PAYMENTS_LEAD}
+                </Typography>
+
+                <AdminSectionCard title={DASH_ADMIN.PAYMENTS_STATS_SECTION}>
+                  {payStatsLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                      <CircularProgress size={32} />
+                    </Box>
+                  ) : (
+                    <Stack spacing={3}>
+                      <Stack spacing={2}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          {DASH_ADMIN.PAYMENTS_SUB_COURSES}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                          {DASH_ADMIN.PAYMENTS_CHART_CAPTION.replace(
+                            '{n}',
+                            String(payStats?.coursePayments?.total ?? 0),
+                          )}
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                            gap: 2,
+                            minHeight: 280,
+                          }}
+                        >
+                          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                            <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                              {DASH_ADMIN.PAYMENTS_CHART_BY_STATUS}
+                            </Typography>
+                            <ResponsiveContainer width="100%" height={240}>
+                              <BarChart data={payCourseChartByStatus} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                <YAxis allowDecimals={false} width={36} />
+                                <RechartsTooltip />
+                                <Bar
+                                  dataKey="count"
+                                  name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                  fill={chartPrimary}
+                                  radius={[4, 4, 0, 0]}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Paper>
+                          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                            <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                              {DASH_ADMIN.PAYMENTS_CHART_BY_METHOD}
+                            </Typography>
+                            <ResponsiveContainer width="100%" height={240}>
+                              <BarChart data={payCourseChartByMethod} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" interval={0} tick={{ fontSize: 9 }} angle={-20} textAnchor="end" height={56} />
+                                <YAxis allowDecimals={false} width={36} />
+                                <RechartsTooltip />
+                                <Bar
+                                  dataKey="count"
+                                  name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                  fill={chartAccent}
+                                  radius={[4, 4, 0, 0]}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Paper>
+                        </Box>
+                        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                          <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                            {DASH_ADMIN.PAYMENTS_CHART_BY_DAY}
+                          </Typography>
+                          <ResponsiveContainer width="100%" height={260}>
+                            <LineChart data={payCourseLineData} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="dayLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={52} />
+                              <YAxis allowDecimals={false} width={36} />
+                              <RechartsTooltip />
+                              <Line
+                                type="monotone"
+                                dataKey="count"
+                                name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                stroke={chartSecondary}
+                                strokeWidth={2}
+                                dot
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Paper>
+                      </Stack>
+
+                      <Stack spacing={2} sx={{ pt: { xs: 0, sm: 0.5 }, borderTop: 1, borderColor: 'divider' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, pt: { xs: 1, sm: 0 } }}>
+                          {DASH_ADMIN.PAYMENTS_SUB_CLASSES}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                          {DASH_ADMIN.PAYMENTS_CHART_CAPTION.replace(
+                            '{n}',
+                            String(payStats?.classPayments?.total ?? 0),
+                          )}
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                            gap: 2,
+                            minHeight: 280,
+                          }}
+                        >
+                          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                            <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                              {DASH_ADMIN.PAYMENTS_CHART_BY_STATUS}
+                            </Typography>
+                            <ResponsiveContainer width="100%" height={240}>
+                              <BarChart data={payClassChartByStatus} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                <YAxis allowDecimals={false} width={36} />
+                                <RechartsTooltip />
+                                <Bar
+                                  dataKey="count"
+                                  name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                  fill={chartPrimary}
+                                  radius={[4, 4, 0, 0]}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Paper>
+                          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                            <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                              {DASH_ADMIN.PAYMENTS_CHART_BY_METHOD}
+                            </Typography>
+                            <ResponsiveContainer width="100%" height={240}>
+                              <BarChart data={payClassChartByMethod} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" interval={0} tick={{ fontSize: 9 }} angle={-20} textAnchor="end" height={56} />
+                                <YAxis allowDecimals={false} width={36} />
+                                <RechartsTooltip />
+                                <Bar
+                                  dataKey="count"
+                                  name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                  fill={chartAccent}
+                                  radius={[4, 4, 0, 0]}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Paper>
+                        </Box>
+                        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                          <Typography variant="subtitle2" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                            {DASH_ADMIN.PAYMENTS_CHART_BY_DAY}
+                          </Typography>
+                          <ResponsiveContainer width="100%" height={260}>
+                            <LineChart data={payClassLineData} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="dayLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={52} />
+                              <YAxis allowDecimals={false} width={36} />
+                              <RechartsTooltip />
+                              <Line
+                                type="monotone"
+                                dataKey="count"
+                                name={DASH_ADMIN.PAYMENTS_CHART_LEGEND_RECORDS}
+                                stroke={chartSecondary}
+                                strokeWidth={2}
+                                dot
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Paper>
+                      </Stack>
+                    </Stack>
+                  )}
+                </AdminSectionCard>
+
+                <Tabs
+                  value={paymentsArea}
+                  onChange={(_, v) => setPaymentsArea(v)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{ borderBottom: 1, borderColor: 'divider' }}
+                >
+                  <Tab value="courses" label={DASH_ADMIN.PAYMENTS_SUB_COURSES} />
+                  <Tab value="classes" label={DASH_ADMIN.PAYMENTS_SUB_CLASSES} />
+                </Tabs>
+
+                {paymentsArea === 'courses' ? (
+                  <AdminSectionCard
+                    title={DASH_ADMIN.PAYMENTS_SUB_COURSES}
+                    action={
+                      <FormControl size="small" sx={{ minWidth: 160 }}>
+                        <InputLabel id="pay-course-status">{DASH_ADMIN.PAYMENTS_FILTER_STATUS}</InputLabel>
+                        <Select
+                          labelId="pay-course-status"
+                          label={DASH_ADMIN.PAYMENTS_FILTER_STATUS}
+                          value={payCourseStatus}
+                          onChange={(e) => {
+                            setPayCourseStatus(e.target.value);
+                            setPayCoursePage(0);
+                          }}
+                        >
+                          <MenuItem value="pending">{DASH_ADMIN.PAYMENTS_STATUS_PENDING}</MenuItem>
+                          <MenuItem value="approved">{DASH_ADMIN.PAYMENTS_STATUS_APPROVED}</MenuItem>
+                          <MenuItem value="rejected">{DASH_ADMIN.PAYMENTS_STATUS_REJECTED}</MenuItem>
+                          <MenuItem value="all">{DASH_ADMIN.PAYMENTS_STATUS_ALL}</MenuItem>
+                        </Select>
+                      </FormControl>
+                    }
+                  >
+                    <AdminDataTable>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_STUDENT}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_EMAIL}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_TARGET}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_AMOUNT}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_METHOD}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_NOTE}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_DATE}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_STATUS}</TableCell>
+                          <TableCell align="right" sx={adminHeaderCellSx}>
+                            {DASH_ADMIN.PAYMENTS_TH_ACTIONS}
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {payCourseItems.map((row) => (
+                          <TableRow key={row.id} sx={adminBodyRowSx}>
+                            <TableCell sx={{ fontWeight: 600 }}>{row.student?.full_name || '\u2014'}</TableCell>
+                            <TableCell>{row.student?.email || '\u2014'}</TableCell>
+                            <TableCell>{row.courses?.title || '\u2014'}</TableCell>
+                            <TableCell>
+                              {row.courses?.price_cents != null && row.courses.price_cents > 0
+                                ? `${(row.courses.price_cents / 100).toLocaleString('vi-VN')} \u20ab`
+                                : COMMON.FREE}
+                            </TableCell>
+                            <TableCell>{adminPayMethodLabel(row.payment_method)}</TableCell>
+                            <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {row.payment_note || '\u2014'}
+                            </TableCell>
+                            <TableCell>
+                              {row.enrolled_at ? new Date(row.enrolled_at).toLocaleString('vi-VN') : '\u2014'}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={adminPayStatusLabel(row.payment_status)}
+                                color={
+                                  row.payment_status === 'approved'
+                                    ? 'success'
+                                    : row.payment_status === 'rejected'
+                                      ? 'error'
+                                      : 'warning'
+                                }
+                                sx={{ fontWeight: 700 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              {row.payment_status === 'pending' ? (
+                                <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    onClick={() => void patchPaymentCourseRow(row.id, 'approved')}
+                                  >
+                                    {DASH_ADMIN.PAYMENTS_APPROVE}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={() => void patchPaymentCourseRow(row.id, 'rejected')}
+                                  >
+                                    {DASH_ADMIN.PAYMENTS_REJECT}
+                                  </Button>
+                                </Stack>
+                              ) : (
+                                '\u2014'
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </AdminDataTable>
+                    <AdminListPagination
+                      page={payCoursePage}
+                      pageSize={payCoursePageSize}
+                      total={payCourseTotal}
+                      onPageChange={(_, p) => setPayCoursePage(p)}
+                      onPageSizeChange={(e) => {
+                        setPayCoursePageSize(parseInt(e.target.value, 10));
+                        setPayCoursePage(0);
+                      }}
+                      labelRowsPerPage={DASH_ADMIN.TABLE_PAGINATION_LABEL_ROWS}
+                      labelDisplayedRows={({ from, to, count }) =>
+                        count === 0 ? '0 / 0' : `${from}\u2013${to} / ${count !== -1 ? count : '\u2014'}`
+                      }
+                      sx={{ borderTop: 1, borderColor: 'divider' }}
+                    />
+                    {payCourseTotal === 0 ? (
+                      <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 2 }}>
+                        {DASH_ADMIN.PAYMENTS_EMPTY}
+                      </Typography>
+                    ) : null}
+                  </AdminSectionCard>
+                ) : (
+                  <AdminSectionCard
+                    title={DASH_ADMIN.PAYMENTS_SUB_CLASSES}
+                    action={
+                      <FormControl size="small" sx={{ minWidth: 160 }}>
+                        <InputLabel id="pay-class-status">{DASH_ADMIN.PAYMENTS_FILTER_STATUS}</InputLabel>
+                        <Select
+                          labelId="pay-class-status"
+                          label={DASH_ADMIN.PAYMENTS_FILTER_STATUS}
+                          value={payClassStatus}
+                          onChange={(e) => {
+                            setPayClassStatus(e.target.value);
+                            setPayClassPage(0);
+                          }}
+                        >
+                          <MenuItem value="pending">{DASH_ADMIN.PAYMENTS_STATUS_PENDING}</MenuItem>
+                          <MenuItem value="approved">{DASH_ADMIN.PAYMENTS_STATUS_APPROVED}</MenuItem>
+                          <MenuItem value="rejected">{DASH_ADMIN.PAYMENTS_STATUS_REJECTED}</MenuItem>
+                          <MenuItem value="all">{DASH_ADMIN.PAYMENTS_STATUS_ALL}</MenuItem>
+                        </Select>
+                      </FormControl>
+                    }
+                  >
+                    <AdminDataTable>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_STUDENT}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_EMAIL}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_TARGET}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_METHOD}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_NOTE}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_DATE}</TableCell>
+                          <TableCell sx={adminHeaderCellSx}>{DASH_ADMIN.PAYMENTS_TH_STATUS}</TableCell>
+                          <TableCell align="right" sx={adminHeaderCellSx}>
+                            {DASH_ADMIN.PAYMENTS_TH_ACTIONS}
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {payClassItems.map((row) => (
+                          <TableRow key={row.id} sx={adminBodyRowSx}>
+                            <TableCell sx={{ fontWeight: 600 }}>{row.student?.full_name || '\u2014'}</TableCell>
+                            <TableCell>{row.student?.email || '\u2014'}</TableCell>
+                            <TableCell>{row.classes?.name || '\u2014'}</TableCell>
+                            <TableCell>{adminPayMethodLabel(row.payment_method)}</TableCell>
+                            <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {row.payment_note || '\u2014'}
+                            </TableCell>
+                            <TableCell>
+                              {row.joined_at ? new Date(row.joined_at).toLocaleString('vi-VN') : '\u2014'}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={adminPayStatusLabel(row.payment_status)}
+                                color={
+                                  row.payment_status === 'approved'
+                                    ? 'success'
+                                    : row.payment_status === 'rejected'
+                                      ? 'error'
+                                      : 'warning'
+                                }
+                                sx={{ fontWeight: 700 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              {row.payment_status === 'pending' ? (
+                                <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    onClick={() => void patchPaymentClassRow(row.id, 'approved')}
+                                  >
+                                    {DASH_ADMIN.PAYMENTS_APPROVE}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={() => void patchPaymentClassRow(row.id, 'rejected')}
+                                  >
+                                    {DASH_ADMIN.PAYMENTS_REJECT}
+                                  </Button>
+                                </Stack>
+                              ) : (
+                                '\u2014'
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </AdminDataTable>
+                    <AdminListPagination
+                      page={payClassPage}
+                      pageSize={payClassPageSize}
+                      total={payClassTotal}
+                      onPageChange={(_, p) => setPayClassPage(p)}
+                      onPageSizeChange={(e) => {
+                        setPayClassPageSize(parseInt(e.target.value, 10));
+                        setPayClassPage(0);
+                      }}
+                      labelRowsPerPage={DASH_ADMIN.TABLE_PAGINATION_LABEL_ROWS}
+                      labelDisplayedRows={({ from, to, count }) =>
+                        count === 0 ? '0 / 0' : `${from}\u2013${to} / ${count !== -1 ? count : '\u2014'}`
+                      }
+                      sx={{ borderTop: 1, borderColor: 'divider' }}
+                    />
+                    {payClassTotal === 0 ? (
+                      <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 2 }}>
+                        {DASH_ADMIN.PAYMENTS_EMPTY}
+                      </Typography>
+                    ) : null}
+                  </AdminSectionCard>
+                )}
+              </Stack>
             )}
 
             {tab === 'content' && (
