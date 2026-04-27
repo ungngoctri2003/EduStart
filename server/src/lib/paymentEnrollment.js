@@ -14,10 +14,10 @@ export function normalizePaymentNote(v) {
  */
 export function paymentMethodError(v) {
   if (v == null || typeof v !== 'string') {
-    return 'payment_method required: cash, bank_transfer, momo, vnpay';
+    return 'Vui lòng chọn hình thức thanh toán: tiền mặt, chuyển khoản, MoMo hoặc VNPay.';
   }
   if (!PAYMENT_METHODS.includes(v)) {
-    return 'payment_method must be one of: cash, bank_transfer, momo, vnpay';
+    return 'Hình thức thanh toán không hợp lệ. Chọn một trong: tiền mặt, chuyển khoản, MoMo, VNPay.';
   }
   return null;
 }
