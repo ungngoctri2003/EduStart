@@ -1,6 +1,6 @@
 import { TablePagination } from '@mui/material';
 
-const ROWS = [10, 15, 20, 25, 50];
+const ROWS = [10, 12, 15, 20, 25, 50];
 
 /**
  * MUI phân trang dưới bảng (0-based `page` giống TablePagination).
