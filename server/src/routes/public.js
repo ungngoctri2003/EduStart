@@ -140,7 +140,7 @@ r.get('/classes', async (_req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('classes')
-      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id')
+      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url')
       .eq('status', 'active')
       .order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
@@ -155,7 +155,7 @@ r.get('/classes/:slug', async (req, res) => {
   try {
     const { data: row, error } = await supabaseAdmin
       .from('classes')
-      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id')
+      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url')
       .eq('slug', req.params.slug)
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });

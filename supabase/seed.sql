@@ -14,3 +14,7 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO public.testimonials (author_name, author_title, content, rating, sort_order) VALUES
   ('Alex K.', 'Student', 'Great platform and courses!', 5, 1),
   ('Sam R.', 'Professional', 'Clear explanations and practical examples.', 5, 2);
+
+-- Lớp học: chạy `supabase db reset` sẽ nạp file này bằng psql (hỗ trợ \ir).
+-- Trong Supabase Dashboard → SQL Editor, nếu \ir lỗi, chạy riêng nội dung `supabase/seed_classes.sql`.
+\ir seed_classes.sql

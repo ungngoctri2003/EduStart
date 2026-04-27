@@ -204,7 +204,7 @@ const INITIAL_COURSE_FORM = {
 };
 
 /** Must match `TAB_KEYS` in `AdminShell.jsx` */
-const ADMIN_TAB_KEYS = ['users', 'classes', 'courses', 'enrollments', 'quiz_stats', 'content'];
+const ADMIN_TAB_KEYS = ['users', 'classes', 'courses', 'content'];
 
 export function DashboardAdmin() {
   const theme = useTheme();
@@ -217,7 +217,16 @@ export function DashboardAdmin() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = useMemo(() => {
     const t = searchParams.get('tab');
-    return t && ADMIN_TAB_KEYS.includes(t) ? t : 'users';
+    if (t === 'enrollments' || t === 'quiz_stats') return 'courses';
+    if (t && ADMIN_TAB_KEYS.includes(t)) return t;
+    return 'users';
+  }, [searchParams]);
+  const courseArea = useMemo(() => {
+    const t = searchParams.get('tab');
+    if (t === 'enrollments' || t === 'quiz_stats') return t;
+    const a = searchParams.get('courseArea');
+    if (a === 'enrollments' || a === 'quiz_stats') return a;
+    return 'overview';
   }, [searchParams]);
   const setTab = useCallback(
     (v) => {
@@ -225,6 +234,7 @@ export function DashboardAdmin() {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
+          next.delete('courseArea');
           if (v === 'users') {
             next.delete('tab');
           } else {
@@ -237,6 +247,38 @@ export function DashboardAdmin() {
     },
     [setSearchParams],
   );
+  const setCourseArea = useCallback(
+    (area) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('tab', 'courses');
+          if (area === 'overview') {
+            next.delete('courseArea');
+          } else {
+            next.set('courseArea', area);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t !== 'enrollments' && t !== 'quiz_stats') return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', 'courses');
+        next.set('courseArea', t);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
   const [courseMainPanel, setCourseMainPanel] = useState('catalog');
 
   const [users, setUsers] = useState([]);
@@ -324,12 +366,14 @@ export function DashboardAdmin() {
   const [classPageSize, setClassPageSize] = useState(10);
   const [classesItems, setClassesItems] = useState([]);
   const [classTotal, setClassTotal] = useState(0);
+  const [classMetrics, setClassMetrics] = useState(null);
   const [classDialogOpen, setClassDialogOpen] = useState(false);
   const [classEditingId, setClassEditingId] = useState(null);
   const [classForm, setClassForm] = useState({
     name: '',
     slug: '',
     description: '',
+    image_url: '',
     teacher_id: '',
     status: 'active',
   });
@@ -405,6 +449,32 @@ export function DashboardAdmin() {
       byDaySeries: userMetrics.byDaySeries,
     };
   }, [userMetrics]);
+
+  const classAnalytics = useMemo(() => {
+    if (!classMetrics) {
+      return {
+        total: 0,
+        active: 0,
+        archived: 0,
+        newIn30d: 0,
+        byStatus: [],
+        byDaySeries: [],
+      };
+    }
+    const active = classMetrics.active ?? 0;
+    const archived = classMetrics.archived ?? 0;
+    return {
+      total: classMetrics.total ?? 0,
+      active,
+      archived,
+      newIn30d: classMetrics.newIn30d ?? 0,
+      byStatus: [
+        { name: DASH_ADMIN.CLASS_STATUS_ACTIVE, count: active },
+        { name: DASH_ADMIN.CLASS_STATUS_ARCHIVED, count: archived },
+      ],
+      byDaySeries: classMetrics.byDaySeries ?? [],
+    };
+  }, [classMetrics]);
 
   const teamCmsAnalytics = useMemo(
     () => buildTeamCmsAnalytics(teamMetricsItems ?? [], DASH_ADMIN.CMS_ROLE_UNLABELED),
@@ -533,6 +603,12 @@ export function DashboardAdmin() {
     setClassesItems(data.items || []);
     setClassTotal(data.total ?? 0);
   }, [token, classPage, classPageSize]);
+
+  const loadClassMetrics = useCallback(async () => {
+    if (!token) return;
+    const m = await apiFetch('/api/admin/classes/metrics', {}, token);
+    setClassMetrics(m);
+  }, [token]);
 
   const loadTeacherOptions = useCallback(async () => {
     if (!token) return;
@@ -807,7 +883,7 @@ export function DashboardAdmin() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (tab !== 'enrollments' || !token) return;
+      if (tab !== 'courses' || courseArea !== 'enrollments' || !token) return;
       try {
         await loadEnrollReport();
       } catch (e) {
@@ -817,12 +893,12 @@ export function DashboardAdmin() {
     return () => {
       cancelled = true;
     };
-  }, [tab, token, loadEnrollReport]);
+  }, [tab, courseArea, token, loadEnrollReport]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (tab !== 'quiz_stats' || !token) return;
+      if (tab !== 'courses' || courseArea !== 'quiz_stats' || !token) return;
       setQuizStatsLoading(true);
       try {
         await loadQuizAnalytics();
@@ -835,12 +911,12 @@ export function DashboardAdmin() {
     return () => {
       cancelled = true;
     };
-  }, [tab, token, loadQuizAnalytics]);
+  }, [tab, courseArea, token, loadQuizAnalytics]);
 
   useEffect(() => {
-    if (tab !== 'courses' || !token) return;
+    if (tab !== 'courses' || courseArea !== 'overview' || !token) return;
     void loadContentStats();
-  }, [tab, token, loadContentStats]);
+  }, [tab, courseArea, token, loadContentStats]);
 
   useEffect(() => {
     if (tab !== 'content' || cmsSubTab !== 'team' || !token) return;
@@ -861,6 +937,11 @@ export function DashboardAdmin() {
     if (tab !== 'classes' || !token) return;
     void loadClassesPage();
   }, [tab, token, loadClassesPage]);
+
+  useEffect(() => {
+    if (tab !== 'classes' || !token) return;
+    void loadClassMetrics();
+  }, [tab, token, loadClassMetrics]);
 
   useEffect(() => {
     if (tab !== 'classes' || !token) return;
@@ -981,6 +1062,7 @@ export function DashboardAdmin() {
       name: '',
       slug: '',
       description: '',
+      image_url: '',
       teacher_id: teacherOptions[0]?.id || '',
       status: 'active',
     });
@@ -994,6 +1076,7 @@ export function DashboardAdmin() {
       name: row.name || '',
       slug: row.slug || '',
       description: row.description || '',
+      image_url: row.image_url || '',
       teacher_id: row.teacher_id || '',
       status: row.status || 'active',
     });
@@ -1016,6 +1099,7 @@ export function DashboardAdmin() {
         const body = {
           name: classForm.name.trim(),
           description: classForm.description.trim() || null,
+          image_url: classForm.image_url.trim() || null,
           teacher_id: classForm.teacher_id,
           status: classForm.status,
         };
@@ -1026,6 +1110,7 @@ export function DashboardAdmin() {
         const body = {
           name: classForm.name.trim(),
           description: classForm.description.trim() || null,
+          image_url: classForm.image_url.trim() || null,
           teacher_id: classForm.teacher_id,
           status: classForm.status,
         };
@@ -1034,6 +1119,7 @@ export function DashboardAdmin() {
       }
       setClassDialogOpen(false);
       await loadClassesPage();
+      await loadClassMetrics();
     } catch (err) {
       toast.error(err.data?.error || err.message);
     }
@@ -1048,6 +1134,7 @@ export function DashboardAdmin() {
         resetClassDetailPanel();
       }
       await loadClassesPage();
+      await loadClassMetrics();
     } catch (err) {
       toast.error(err.data?.error || err.message);
     }
@@ -1860,6 +1947,99 @@ export function DashboardAdmin() {
 
             {tab === 'classes' && (
               <Stack spacing={3}>
+                <AdminSectionCard title={DASH_ADMIN.CLASS_STATS_SECTION}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
+                      gap: 2,
+                      mb: 3,
+                    }}
+                  >
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                        {DASH_ADMIN.CLASS_STATS_TOTAL}
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                        {classAnalytics.total}
+                      </Typography>
+                    </Paper>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                        {DASH_ADMIN.CLASS_STATS_ACTIVE_COUNT}
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                        {classAnalytics.active}
+                      </Typography>
+                    </Paper>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                        {DASH_ADMIN.CLASS_STATS_ARCHIVED_COUNT}
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                        {classAnalytics.archived}
+                      </Typography>
+                    </Paper>
+                    <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                        {DASH_ADMIN.CLASS_STATS_NEW_30D}
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                        {classAnalytics.newIn30d}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                      gap: 2,
+                      minHeight: 280,
+                    }}
+                  >
+                    <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                      <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                        {DASH_ADMIN.CLASS_CHART_BY_STATUS}
+                      </Typography>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={classAnalytics.byStatus} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} width={36} />
+                          <RechartsTooltip />
+                          <Bar
+                            dataKey="count"
+                            name={DASH_ADMIN.CLASS_CHART_LEGEND_COUNT}
+                            fill={chartPrimary}
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Paper>
+                    <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                      <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                        {DASH_ADMIN.CLASS_CHART_NEW_30D}
+                      </Typography>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <LineChart data={classAnalytics.byDaySeries} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={52} />
+                          <YAxis allowDecimals={false} width={36} />
+                          <RechartsTooltip />
+                          <Line
+                            type="monotone"
+                            dataKey="count"
+                            name={DASH_ADMIN.CLASS_CHART_LEGEND_NEW_PER_DAY}
+                            stroke={chartSecondary}
+                            strokeWidth={2}
+                            dot
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Paper>
+                  </Box>
+                </AdminSectionCard>
+
                 <AdminSectionCard
                   overline={DASH_ADMIN.LEAD_CLASSES}
                   title={DASH_ADMIN.SECTION_CLASS_LIST}
@@ -2248,6 +2428,25 @@ export function DashboardAdmin() {
             )}
 
             {tab === 'courses' && (
+              <>
+                <Tabs
+                  value={courseArea}
+                  onChange={(_, v) => setCourseArea(v)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    mb: 2.5,
+                    minHeight: 48,
+                    borderBottom: 1,
+                    borderColor: 'divider',
+                    '& .MuiTab-root': { textTransform: 'none', fontWeight: 700, fontSize: '0.875rem' },
+                  }}
+                >
+                  <Tab value="overview" label={DASH_ADMIN.COURSE_AREA_OVERVIEW} />
+                  <Tab value="enrollments" label={DASH_ADMIN.TABS.enrollments} />
+                  <Tab value="quiz_stats" label={DASH_ADMIN.TABS.quiz_stats} />
+                </Tabs>
+                {courseArea === 'overview' && (
               <Stack spacing={2.5}>
                 <AdminSectionCard title={DASH_ADMIN.COURSE_STATS_SECTION}>
                   {contentStatsLoading && !contentStats ? (
@@ -2948,9 +3147,9 @@ export function DashboardAdmin() {
                   </AdminSectionCard>
                 )}
               </Stack>
-            )}
+                )}
 
-            {tab === 'quiz_stats' && (
+                {courseArea === 'quiz_stats' && (
               <Stack spacing={3}>
                 <AdminSectionCard overline={DASH_ADMIN.LEAD_QUIZ_ANALYTICS} title={DASH_ADMIN.TABS.quiz_stats}>
                   {quizStatsLoading && quizAnSummary == null ? (
@@ -3117,9 +3316,9 @@ export function DashboardAdmin() {
                   )}
                 </AdminSectionCard>
               </Stack>
-            )}
+                )}
 
-            {tab === 'enrollments' && (
+                {courseArea === 'enrollments' && (
               <Stack spacing={3}>
                 <AdminSectionCard overline={DASH_ADMIN.LEAD_ENROLLMENTS} title={DASH_ADMIN.TABS.enrollments}>
               <Box
@@ -3231,6 +3430,8 @@ export function DashboardAdmin() {
               ) : null}
                 </AdminSectionCard>
               </Stack>
+                )}
+              </>
             )}
 
             {tab === 'content' && (
@@ -3988,6 +4189,14 @@ export function DashboardAdmin() {
             onChange={(e) => setClassForm((f) => ({ ...f, description: e.target.value }))}
             multiline
             minRows={2}
+            fullWidth
+          />
+          <TextField
+            size="small"
+            label={DASH_ADMIN.CLASS_IMAGE_URL}
+            value={classForm.image_url}
+            onChange={(e) => setClassForm((f) => ({ ...f, image_url: e.target.value }))}
+            helperText={DASH_ADMIN.CLASS_IMAGE_HINT}
             fullWidth
           />
           <FormControl size="small" fullWidth>

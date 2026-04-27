@@ -24,6 +24,7 @@ import {
   Handshake,
   Monitor,
 } from 'lucide-react';
+import { ClassCatalogCard } from '../components/ClassCatalogCard';
 import { CourseCatalogCard } from '../components/CourseCatalogCard';
 import { TeamMemberGrid } from '../components/TeamMemberGrid';
 import { apiFetch } from '../lib/api';
@@ -40,7 +41,7 @@ import {
   staggerGrid,
   staggerItem,
 } from '../motion/variants';
-import { COURSES_PAGE, ERR, HOME, TEAM_PAGE } from '../strings/vi';
+import { CLASSES_PAGE, COURSES_PAGE, ERR, HOME, TEAM_PAGE } from '../strings/vi';
 
 const MotionBox = motion.create(Box);
 const inView = { once: true, amount: 0.2 };
@@ -86,12 +87,14 @@ const featureCopy = [
 ];
 
 const FEATURED_COURSE_COUNT = 6;
+const FEATURED_HOME_CLASS_COUNT = 3;
 
 export function Home() {
   const [index, setIndex] = useState(0);
   const [teamPreview, setTeamPreview] = useState([]);
   const [categoriesPreview, setCategoriesPreview] = useState([]);
   const [featuredCourses, setFeaturedCourses] = useState([]);
+  const [featuredClasses, setFeaturedClasses] = useState([]);
   const [catalogErr, setCatalogErr] = useState('');
   const [strongHeroEntry, setStrongHeroEntry] = useState(true);
   const reduceMotion = useReducedMotion() ?? false;
@@ -125,20 +128,25 @@ export function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const [c, cat] = await Promise.all([apiFetch('/api/courses'), apiFetch('/api/categories')]);
-        if (cancelled) return;
-        const courses = Array.isArray(c) ? c : [];
-        const categories = Array.isArray(cat) ? cat : [];
-        setFeaturedCourses(courses.slice(0, FEATURED_COURSE_COUNT));
-        setCategoriesPreview(categories.slice(0, 8));
+      const results = await Promise.allSettled([
+        apiFetch('/api/courses'),
+        apiFetch('/api/categories'),
+        apiFetch('/api/classes'),
+      ]);
+      if (cancelled) return;
+      const [cRes, catRes, clsRes] = results;
+      const courses = cRes.status === 'fulfilled' && Array.isArray(cRes.value) ? cRes.value : [];
+      const categories = catRes.status === 'fulfilled' && Array.isArray(catRes.value) ? catRes.value : [];
+      const classes = clsRes.status === 'fulfilled' && Array.isArray(clsRes.value) ? clsRes.value : [];
+      setFeaturedCourses(courses.slice(0, FEATURED_COURSE_COUNT));
+      setCategoriesPreview(categories.slice(0, 8));
+      setFeaturedClasses(classes.slice(0, FEATURED_HOME_CLASS_COUNT));
+      const catOrCourseRejected = [cRes, catRes].find((r) => r.status === 'rejected');
+      if (catOrCourseRejected) {
+        const reason = catOrCourseRejected.reason;
+        setCatalogErr(typeof reason?.message === 'string' ? reason.message : ERR.LOAD);
+      } else {
         setCatalogErr('');
-      } catch (e) {
-        if (!cancelled) {
-          setCatalogErr(e.message || ERR.LOAD);
-          setFeaturedCourses([]);
-          setCategoriesPreview([]);
-        }
       }
     })();
     return () => {
@@ -596,6 +604,56 @@ export function Home() {
             </Button>
           </motion.div>
         </div>
+      </section>
+
+      <section className="container mx-auto max-w-6xl px-4 py-16">
+        <motion.div
+          className="text-center"
+          initial="hidden"
+          whileInView="visible"
+          viewport={inView}
+          variants={sGrid}
+        >
+          <motion.p
+            className="text-sm font-semibold uppercase tracking-wide text-primary"
+            variants={sItem}
+          >
+            {HOME.FEATURED_CLASSES_KICKER}
+          </motion.p>
+          <motion.h2
+            className="font-display mt-2 text-3xl font-bold text-base-content md:text-4xl"
+            variants={sItem}
+          >
+            {HOME.FEATURED_CLASSES_H2}
+          </motion.h2>
+        </motion.div>
+        <motion.div
+          className="mt-10 grid gap-8 sm:grid-cols-2 xl:grid-cols-3"
+          initial="hidden"
+          whileInView="visible"
+          viewport={inView}
+          variants={sGrid}
+        >
+          {featuredClasses.map((klass) => (
+            <motion.div key={klass.id} variants={sItem} className="min-h-0">
+              <ClassCatalogCard klass={klass} />
+            </motion.div>
+          ))}
+        </motion.div>
+        {!catalogErr && featuredClasses.length === 0 ? (
+          <p className="mt-8 text-center text-base-content/60">{CLASSES_PAGE.EMPTY}</p>
+        ) : null}
+        <motion.div
+          className="mt-10 text-center"
+          initial="hidden"
+          whileInView="visible"
+          viewport={inView}
+          variants={sec}
+        >
+          <Button component={Link} to="/classes" variant="outlined" color="primary" size="large" sx={{ minWidth: 200 }}>
+            {HOME.VIEW_ALL_CLASSES}
+          </Button>
+        </motion.div>
       </section>
 
       {teamPreview.length > 0 ? (

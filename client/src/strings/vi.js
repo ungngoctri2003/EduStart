@@ -160,6 +160,10 @@ export const HOME = {
   FEATURED_PROGRAMS_KICKER: 'Khóa học',
   FEATURED_PROGRAMS_H2: 'Khám phá các chương trình đào tạo nổi bật',
 
+  FEATURED_CLASSES_KICKER: 'Lớp học',
+  FEATURED_CLASSES_H2: 'Lớp học trực tiếp đang mở',
+  VIEW_ALL_CLASSES: 'Xem tất cả lớp',
+
   FAQ_TITLE: 'Câu hỏi thường gặp',
   FAQ_ITEMS: [
     {
@@ -485,6 +489,12 @@ export const DASH_STUDENT = {
   TH_CLASS_NAME: 'Lớp',
   CLASS_LINK_LEARN: 'Vào lớp',
   LOAD_CLASSES_ERROR: 'Không tải được danh sách lớp.',
+  STATS_SECTION: 'Thống kê học tập',
+  STATS_SECTION_SUB: 'Tổng quan khóa học, lớp và kết quả làm bài của bạn.',
+  STAT_MY_CLASSES: 'Lớp đang học',
+  CHART_ATTEMPTS_BY_SOURCE: 'Lượt làm bài theo khóa / lớp',
+  CHART_ATTEMPTS_30D: 'Lượt làm bài 30 ngày gần đây',
+  CHART_LEGEND_ATTEMPT_COUNT: 'Số lượt',
 };
 
 export const DASH_ADMIN = {
@@ -539,6 +549,8 @@ export const DASH_ADMIN = {
     quiz_stats: 'Bài kiểm tra',
     content: 'Đội ngũ & đánh giá',
   },
+  /** Mục con trong tab Khóa học (đăng ký & bài kiểm tra nằm dưới đây). */
+  COURSE_AREA_OVERVIEW: 'Khóa học & nội dung',
   TABLE_PAGINATION_LABEL_ROWS: 'Dòng mỗi trang',
   CMS_INTRO: 'Nội dung công khai và hộp thư người dùng.',
   CMS_SUBTAB_TEAM: 'Đội ngũ',
@@ -699,12 +711,23 @@ export const DASH_ADMIN = {
   TOAST_TEST_ADDED: 'Đã thêm đánh giá',
   TOAST_DELETED: 'Đã xóa',
   LEAD_CLASSES: 'Tạo lớp, phân giáo viên và quản lý danh sách học sinh.',
+  CLASS_STATS_SECTION: 'Thống kê lớp học',
+  CLASS_STATS_TOTAL: 'Tổng lớp',
+  CLASS_STATS_ACTIVE_COUNT: 'Đang mở',
+  CLASS_STATS_ARCHIVED_COUNT: 'Lưu trữ',
+  CLASS_STATS_NEW_30D: 'Tạo mới 30 ngày',
+  CLASS_CHART_BY_STATUS: 'Phân bố theo trạng thái',
+  CLASS_CHART_NEW_30D: 'Lớp mới 30 ngày gần đây',
+  CLASS_CHART_LEGEND_COUNT: 'Số lớp',
+  CLASS_CHART_LEGEND_NEW_PER_DAY: 'Lớp mới trong ngày',
   SECTION_CLASS_LIST: 'Danh sách lớp học',
   BTN_ADD_CLASS: 'Tạo lớp',
   CLASS_DIALOG_CREATE: 'Tạo lớp học',
   CLASS_DIALOG_EDIT: 'Sửa lớp học',
   CLASS_NAME: 'Tên lớp',
   CLASS_SLUG_HINT: 'Để trống để hệ thống tạo slug từ tên.',
+  CLASS_IMAGE_URL: 'URL ảnh bìa lớp',
+  CLASS_IMAGE_HINT: 'Đường dẫn tĩnh (vd. /img/course-1.png) hoặc URL HTTPS. Để trống để dùng ảnh mặc định.',
   CLASS_TEACHER: 'Giáo viên phụ trách',
   CLASS_NAME_REQUIRED: 'Vui lòng nhập tên lớp.',
   CLASS_TEACHER_REQUIRED: 'Vui lòng chọn giáo viên phụ trách.',
@@ -764,6 +787,21 @@ export const DASH_TEACHER = {
   STUDENT_SEARCH: 'Tìm học sinh (email hoặc tên)',
   ROSTER_EMPTY: 'Chưa có học sinh trong lớp.',
   QUIZ_FORM_HINT: 'Dùng form thêm câu hỏi: 4 lựa chọn A–D và chọn đáp án đúng.',
+  CLASS_COVER_URL: 'URL ảnh bìa lớp',
+  CLASS_COVER_HINT: 'Ảnh hiển thị trên trang lớp và danh sách. Để trống dùng ảnh mặc định.',
+  STATS_SECTION: 'Thống kê lớp giảng dạy',
+  STATS_CLASSES: 'Số lớp',
+  STATS_ENROLLMENTS: 'Ghi danh (tổng chỗ)',
+  STATS_ENROLLMENTS_HINT: 'Mỗi học sinh trong mỗi lớp tính một chỗ; cùng một người ở hai lớp tính hai.',
+  STATS_LECTURES: 'Bài giảng',
+  STATS_QUIZZES: 'Bài kiểm tra',
+  STATS_SCHEDULES: 'Buổi học',
+  STATS_ATTEMPTS: 'Lượt làm bài',
+  CHART_STUDENTS_BY_CLASS: 'Học sinh theo lớp',
+  CHART_ATTEMPTS_30D: 'Lượt làm bài 30 ngày gần đây',
+  CHART_LEGEND_STUDENTS: 'Số học sinh',
+  CHART_LEGEND_ATTEMPTS: 'Lượt làm bài',
+  STATS_LOAD_ERROR: 'Không tải được thống kê.',
 };
 
 export const CLASSROOM = {

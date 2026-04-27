@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Calendar, ChevronRight, GraduationCap, Users } from 'lucide-react';
 import { Box, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from '@mui/material';
+import { classCoverUrl } from '../lib/classCoverUrl';
 import { CLASSES_PAGE } from '../strings/vi';
 
 function fmtDate(iso) {
@@ -60,7 +61,7 @@ export function ClassCatalogCard({ klass }) {
           <CardMedia
             className="class-card-media"
             component="img"
-            image="/img/banner-3.jpg"
+            image={classCoverUrl(klass)}
             alt=""
             sx={{
               height: '100%',

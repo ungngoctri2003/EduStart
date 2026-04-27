@@ -13,7 +13,7 @@ const r = Router();
 async function assertStudentInClass(req, slug) {
   const { data: klass, error: cErr } = await supabaseAdmin
     .from('classes')
-    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id')
+    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url')
     .eq('slug', slug)
     .maybeSingle();
   if (cErr) return { error: cErr.message, status: 500 };
@@ -37,7 +37,7 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
       .select(
         `
         joined_at,
-        classes ( id, name, slug, description, status, starts_at, ends_at, teacher_id )
+        classes ( id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url )
       `,
       )
       .eq('student_id', req.user.id)

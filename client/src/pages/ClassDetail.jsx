@@ -26,6 +26,7 @@ import { ImageReveal, ScrollSection } from '../motion/ScrollBlock';
 import { CLASS_DETAIL, COURSE_DETAIL } from '../strings/vi';
 import { COMMON } from '../strings/vi';
 import { ERR } from '../strings/vi';
+import { classCoverUrl } from '../lib/classCoverUrl';
 
 function stripEnrollSearch(pathname, search) {
   const sp = new URLSearchParams(search);
@@ -297,7 +298,7 @@ export function ClassDetail() {
             >
               <Box
                 component="img"
-                src="/img/banner-3.jpg"
+                src={classCoverUrl(klass)}
                 alt=""
                 sx={{ width: '100%', height: '100%', minHeight: 200, objectFit: 'cover', display: 'block' }}
               />

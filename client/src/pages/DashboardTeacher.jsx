@@ -30,10 +30,23 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { AdminDataTable, adminBodyRowSx, adminHeaderCellSx } from '../components/admin/AdminDataTable';
+import { AdminSectionCard } from '../components/admin/AdminSectionCard';
 import { useAuth } from '../context/useAuth';
 import { apiFetch } from '../lib/api';
 import { newQuizFormRow, quizFormRowsFromApi, buildQuizPayloadFromFormRows } from '../lib/classQuizForm.js';
@@ -44,10 +57,15 @@ import { COMMON, DASH_ADMIN, DASH_TEACHER, PAGE } from '../strings/vi';
 const SUB_TABS = ['overview', 'lectures', 'quizzes', 'students', 'schedule', 'attempts'];
 
 export function DashboardTeacher() {
+  const theme = useTheme();
+  const chartPrimary = theme.palette.primary.main;
+  const chartSecondary = theme.palette.secondary.main;
   const { session, profile } = useAuth();
   const token = session?.access_token;
   const [classes, setClasses] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [dashStats, setDashStats] = useState(null);
+  const [dashStatsLoading, setDashStatsLoading] = useState(false);
   const [slug, setSlug] = useState('');
   const [subTab, setSubTab] = useState('overview');
   const [packLoading, setPackLoading] = useState(false);
@@ -58,6 +76,7 @@ export function DashboardTeacher() {
   const [overviewForm, setOverviewForm] = useState({
     name: '',
     description: '',
+    image_url: '',
     status: 'active',
     starts_at: '',
     ends_at: '',
@@ -131,6 +150,7 @@ export function DashboardTeacher() {
         setOverviewForm({
           name: data.class.name || '',
           description: data.class.description || '',
+          image_url: data.class.image_url || '',
           status: data.class.status || 'active',
           starts_at: data.class.starts_at ? String(data.class.starts_at).slice(0, 16) : '',
           ends_at: data.class.ends_at ? String(data.class.ends_at).slice(0, 16) : '',
@@ -166,6 +186,33 @@ export function DashboardTeacher() {
   useEffect(() => {
     void loadClasses();
   }, [loadClasses]);
+
+  useEffect(() => {
+    if (!token) {
+      setDashStats(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setDashStatsLoading(true);
+    void (async () => {
+      try {
+        const data = await apiFetch('/api/teacher/dashboard-stats', {}, token);
+        if (!cancelled) {
+          setDashStats(data);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setDashStats(null);
+          toast.error(e.message || DASH_TEACHER.STATS_LOAD_ERROR);
+        }
+      } finally {
+        if (!cancelled) setDashStatsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     void loadPack();
@@ -216,6 +263,15 @@ export function DashboardTeacher() {
     return 'Xin chào';
   }, [profile?.full_name]);
 
+  const studentsByClassBars = useMemo(() => {
+    const rows = dashStats?.byClass;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((c) => ({
+      name: c.name || '—',
+      count: c.students ?? 0,
+    }));
+  }, [dashStats?.byClass]);
+
   async function saveOverview(e) {
     e.preventDefault();
     if (!slug) return;
@@ -227,6 +283,7 @@ export function DashboardTeacher() {
           body: JSON.stringify({
             name: overviewForm.name.trim(),
             description: overviewForm.description.trim() || null,
+            image_url: overviewForm.image_url.trim() || null,
             status: overviewForm.status,
             starts_at: overviewForm.starts_at || null,
             ends_at: overviewForm.ends_at || null,
@@ -514,6 +571,8 @@ export function DashboardTeacher() {
     );
   }
 
+  const s = dashStats?.summary;
+
   return (
     <>
       <PageHeader
@@ -531,6 +590,128 @@ export function DashboardTeacher() {
         <Typography color="text.secondary" sx={{ mb: 2 }}>
           {DASH_TEACHER.LEAD}
         </Typography>
+
+        <Box sx={{ mb: 3 }}>
+          <AdminSectionCard title={DASH_TEACHER.STATS_SECTION}>
+            {dashStatsLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                    gap: 2,
+                    mb: 3,
+                  }}
+                >
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_CLASSES}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.classCount ?? 0}
+                    </Typography>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_ENROLLMENTS}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.studentEnrollments ?? 0}
+                    </Typography>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_LECTURES}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.lectureCount ?? 0}
+                    </Typography>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_QUIZZES}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.quizCount ?? 0}
+                    </Typography>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_SCHEDULES}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.scheduleCount ?? 0}
+                    </Typography>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {DASH_TEACHER.STATS_ATTEMPTS}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                      {s?.attemptCount ?? 0}
+                    </Typography>
+                  </Paper>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2, maxWidth: 720 }}>
+                  {DASH_TEACHER.STATS_ENROLLMENTS_HINT}
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                    gap: 2,
+                    minHeight: 280,
+                  }}
+                >
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                    <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                      {DASH_TEACHER.CHART_STUDENTS_BY_CLASS}
+                    </Typography>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={studentsByClassBars} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={56} tick={{ fontSize: 10 }} />
+                        <YAxis allowDecimals={false} width={36} />
+                        <RechartsTooltip />
+                        <Bar
+                          dataKey="count"
+                          name={DASH_TEACHER.CHART_LEGEND_STUDENTS}
+                          fill={chartPrimary}
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Paper>
+                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                    <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                      {DASH_TEACHER.CHART_ATTEMPTS_30D}
+                    </Typography>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <LineChart data={dashStats?.attemptsByDay || []} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={52} />
+                        <YAxis allowDecimals={false} width={36} />
+                        <RechartsTooltip />
+                        <Line
+                          type="monotone"
+                          dataKey="count"
+                          name={DASH_TEACHER.CHART_LEGEND_ATTEMPTS}
+                          stroke={chartSecondary}
+                          strokeWidth={2}
+                          dot
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Paper>
+                </Box>
+              </>
+            )}
+          </AdminSectionCard>
+        </Box>
 
         {classes.length === 0 ? (
           <Paper sx={{ p: 4, borderRadius: 2 }}>
@@ -609,6 +790,14 @@ export function DashboardTeacher() {
                           size="small"
                           multiline
                           minRows={2}
+                        />
+                        <TextField
+                          label={DASH_TEACHER.CLASS_COVER_URL}
+                          value={overviewForm.image_url}
+                          onChange={(e) => setOverviewForm((f) => ({ ...f, image_url: e.target.value }))}
+                          size="small"
+                          helperText={DASH_TEACHER.CLASS_COVER_HINT}
+                          fullWidth
                         />
                         <FormControl size="small">
                           <InputLabel>Trạng thái</InputLabel>

@@ -923,6 +923,36 @@ r.delete('/course-reviews/:id', async (req, res) => {
 // School classes (independent of catalog courses)
 // ---------------------------------------------------------------------------
 
+r.get('/classes/metrics', async (_req, res) => {
+  const { data, error } = await supabaseAdmin.from('classes').select('status, created_at');
+  if (error) return res.status(500).json({ error: error.message });
+  const list = data || [];
+  const dayKeys = lastNLocalDayKeys(30);
+  const byDay = Object.fromEntries(dayKeys.map((k) => [k, 0]));
+  let active = 0;
+  let archived = 0;
+  for (const row of list) {
+    if (row.status === 'archived') archived += 1;
+    else active += 1;
+    const ymd = row.created_at ? toLocalYMD(row.created_at) : null;
+    if (ymd && Object.prototype.hasOwnProperty.call(byDay, ymd)) {
+      byDay[ymd] += 1;
+    }
+  }
+  const byDaySeries = dayKeys.map((k) => {
+    const [, m, d] = k.split('-');
+    return { day: `${d}/${m}`, count: byDay[k] };
+  });
+  const newIn30d = dayKeys.reduce((s, k) => s + byDay[k], 0);
+  res.json({
+    total: list.length,
+    active,
+    archived,
+    newIn30d,
+    byDaySeries,
+  });
+});
+
 r.get('/classes', async (req, res) => {
   const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 15, maxPageSize: 100 });
   const { data, error, count } = await supabaseAdmin
@@ -942,7 +972,7 @@ r.get('/classes', async (req, res) => {
 
 r.post('/classes', async (req, res) => {
   const body = req.body || {};
-  const { name, description, teacher_id, status, starts_at, ends_at } = body;
+  const { name, description, teacher_id, status, starts_at, ends_at, image_url } = body;
   const slugRaw = body.slug;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
   if (!teacher_id || typeof teacher_id !== 'string') return res.status(400).json({ error: 'teacher_id required' });
@@ -966,6 +996,12 @@ r.post('/classes', async (req, res) => {
       status: status && ['active', 'archived'].includes(status) ? status : 'active',
       starts_at: starts_at ?? null,
       ends_at: ends_at ?? null,
+      image_url:
+        image_url === undefined || image_url === null
+          ? null
+          : typeof image_url === 'string' && image_url.trim()
+            ? image_url.trim()
+            : null,
       created_by: req.user.id,
     })
     .select(
@@ -982,8 +1018,16 @@ r.post('/classes', async (req, res) => {
 r.patch('/classes/:id', async (req, res) => {
   const { id } = req.params;
   const patch = {};
-  for (const k of ['name', 'description', 'teacher_id', 'status', 'starts_at', 'ends_at']) {
+  for (const k of ['name', 'description', 'teacher_id', 'status', 'starts_at', 'ends_at', 'image_url']) {
     if (req.body[k] !== undefined) patch[k] = req.body[k];
+  }
+  if (patch.image_url !== undefined) {
+    patch.image_url =
+      patch.image_url === null || patch.image_url === ''
+        ? null
+        : typeof patch.image_url === 'string'
+          ? patch.image_url.trim() || null
+          : null;
   }
   if (patch.teacher_id !== undefined) {
     const { data: tprof, error: tErr } = await supabaseAdmin

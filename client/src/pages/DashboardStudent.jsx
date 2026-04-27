@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Accordion,
@@ -24,12 +24,25 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import { Award, BookOpen, ChevronDown, ClipboardList, GraduationCap, History } from 'lucide-react';
+import { alpha, useTheme } from '@mui/material/styles';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '../components/PageHeader';
+import { AdminSectionCard } from '../components/admin/AdminSectionCard';
 import { useAuth } from '../context/useAuth';
 import { apiFetch } from '../lib/api';
+import { classCoverUrl } from '../lib/classCoverUrl';
 import { COMMON, COURSE_DETAIL, COURSES_PAGE, DASH_STUDENT, ERR } from '../strings/vi';
 
 function formatQuizScoreShort(correct, total, percent) {
@@ -38,62 +51,30 @@ function formatQuizScoreShort(correct, total, percent) {
     .replace('{percent}', String(percent));
 }
 
-function StatTile({ icon, label, value, loading }) {
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2.25,
-        borderRadius: 2,
-        height: '100%',
-        border: 1,
-        borderColor: 'divider',
-        bgcolor: 'background.paper',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-        '&:hover': {
-          borderColor: (t) => alpha(t.palette.primary.main, 0.35),
-          boxShadow: (t) => t.shadows[2],
-        },
-      }}
-    >
-      <Stack direction="row" spacing={1.75} alignItems="flex-start">
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 44,
-            height: 44,
-            borderRadius: 2,
-            flexShrink: 0,
-            bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: 0.02, display: 'block' }}>
-            {label}
-          </Typography>
-          <Typography
-            variant="h5"
-            sx={{
-              fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif",
-              fontWeight: 800,
-              mt: 0.35,
-              lineHeight: 1.15,
-            }}
-          >
-            {loading ? '—' : value}
-          </Typography>
-        </Box>
-      </Stack>
-    </Paper>
-  );
+function toLocalYMD(iso) {
+  const x = new Date(iso);
+  if (Number.isNaN(x.getTime())) return null;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+function lastNLocalDayKeys(n) {
+  const keys = [];
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = new Date(base);
+    dt.setDate(dt.getDate() - i);
+    keys.push(
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+    );
+  }
+  return keys;
 }
 
 export function DashboardStudent() {
+  const theme = useTheme();
+  const chartPrimary = theme.palette.primary.main;
+  const chartSecondary = theme.palette.secondary.main;
   const { session, profile } = useAuth();
   const [rows, setRows] = useState([]);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -105,6 +86,35 @@ export function DashboardStudent() {
   const [classMembershipsLoading, setClassMembershipsLoading] = useState(false);
   const [classQuizAttempts, setClassQuizAttempts] = useState([]);
   const [classAttemptsLoading, setClassAttemptsLoading] = useState(false);
+  const [learnAccordionExpandedId, setLearnAccordionExpandedId] = useState(null);
+  const learnAccordionAutoOpenedRef = useRef(false);
+  const learnAccordionUserToggledRef = useRef(false);
+
+  useEffect(() => {
+    learnAccordionAutoOpenedRef.current = false;
+    learnAccordionUserToggledRef.current = false;
+    setLearnAccordionExpandedId(null);
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    if (learnLoading || rows.length === 0 || learnAccordionAutoOpenedRef.current || learnAccordionUserToggledRef.current) {
+      return;
+    }
+    for (const r of rows) {
+      const slug = r.courses?.slug;
+      if (!slug) continue;
+      const pack = learnBySlug[slug];
+      if (!pack) continue;
+      const nLec = pack.lectures?.length ?? 0;
+      const nQz = pack.quizzes?.length ?? 0;
+      if (nLec > 0 || nQz > 0) {
+        setLearnAccordionExpandedId(r.id);
+        learnAccordionAutoOpenedRef.current = true;
+        return;
+      }
+    }
+    learnAccordionAutoOpenedRef.current = true;
+  }, [learnLoading, rows, learnBySlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,16 +332,37 @@ export function DashboardStudent() {
     return { count: n, avgPercent: avg };
   }, [allQuizAttempts]);
 
+  const chartAttemptsBySource = useMemo(() => {
+    const map = new Map();
+    for (const a of allQuizAttempts) {
+      const lab = String(a._label || '—').trim() || '—';
+      map.set(lab, (map.get(lab) || 0) + 1);
+    }
+    return [...map.entries()]
+      .sort((x, y) => y[1] - x[1])
+      .map(([name, count]) => ({
+        name: name.length > 22 ? `${name.slice(0, 20)}…` : name,
+        count,
+      }));
+  }, [allQuizAttempts]);
+
+  const chartAttemptsByDay = useMemo(() => {
+    const dayKeys = lastNLocalDayKeys(30);
+    const byDay = Object.fromEntries(dayKeys.map((k) => [k, 0]));
+    for (const a of allQuizAttempts) {
+      const ymd = a.submitted_at ? toLocalYMD(a.submitted_at) : null;
+      if (ymd && Object.prototype.hasOwnProperty.call(byDay, ymd)) {
+        byDay[ymd] += 1;
+      }
+    }
+    return dayKeys.map((k) => {
+      const [, mo, d] = k.split('-');
+      return { day: `${d}/${mo}`, count: byDay[k] };
+    });
+  }, [allQuizAttempts]);
+
   const hasEnrollments = rows.length > 0;
-  const statGridSx = {
-    display: 'grid',
-    gap: 2,
-    gridTemplateColumns: {
-      xs: 'repeat(2, minmax(0, 1fr))',
-      sm: 'repeat(3, minmax(0, 1fr))',
-      lg: 'repeat(5, minmax(0, 1fr))',
-    },
-  };
+  const attemptMetricsLoading = attemptsLoading || classAttemptsLoading;
 
   const quizHistoryBlock = (
     <Paper
@@ -475,32 +506,115 @@ export function DashboardStudent() {
           </Alert>
         ) : null}
 
-        <Box sx={statGridSx}>
-          <StatTile icon={<GraduationCap size={22} strokeWidth={2} aria-hidden />} label={DASH_STUDENT.STAT_COURSES} value={rows.length} loading={false} />
-          <StatTile
-            icon={<BookOpen size={22} strokeWidth={2} aria-hidden />}
-            label={DASH_STUDENT.STAT_LECTURES}
-            value={totals.lectures}
-            loading={learnLoading && hasEnrollments}
-          />
-          <StatTile
-            icon={<ClipboardList size={22} strokeWidth={2} aria-hidden />}
-            label={DASH_STUDENT.STAT_QUIZZES}
-            value={totals.quizzes}
-            loading={learnLoading && hasEnrollments}
-          />
-          <StatTile
-            icon={<History size={22} strokeWidth={2} aria-hidden />}
-            label={DASH_STUDENT.STAT_QUIZ_ATTEMPTS}
-            value={quizAttemptStats.count}
-            loading={attemptsLoading || classAttemptsLoading}
-          />
-          <StatTile
-            icon={<Award size={22} strokeWidth={2} aria-hidden />}
-            label={DASH_STUDENT.STAT_QUIZ_AVG}
-            value={quizAttemptStats.count ? `${quizAttemptStats.avgPercent}%` : '—'}
-            loading={attemptsLoading || classAttemptsLoading}
-          />
+        <Box sx={{ mb: 3 }}>
+          <AdminSectionCard overline={DASH_STUDENT.STATS_SECTION_SUB} title={DASH_STUDENT.STATS_SECTION}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                gap: 2,
+                mb: 3,
+              }}
+            >
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_MY_CLASSES}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {classMembershipsLoading ? '—' : classMemberships.length}
+                </Typography>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_COURSES}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {rows.length}
+                </Typography>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_LECTURES}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {learnLoading && hasEnrollments ? '—' : totals.lectures}
+                </Typography>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_QUIZZES}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {learnLoading && hasEnrollments ? '—' : totals.quizzes}
+                </Typography>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_QUIZ_ATTEMPTS}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {attemptMetricsLoading ? '—' : quizAttemptStats.count}
+                </Typography>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                  {DASH_STUDENT.STAT_QUIZ_AVG}
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5 }}>
+                  {attemptMetricsLoading ? '—' : quizAttemptStats.count ? `${quizAttemptStats.avgPercent}%` : '—'}
+                </Typography>
+              </Paper>
+            </Box>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                gap: 2,
+                minHeight: 280,
+              }}
+            >
+              <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                  {DASH_STUDENT.CHART_ATTEMPTS_BY_SOURCE}
+                </Typography>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={chartAttemptsBySource} margin={{ top: 8, right: 8, left: 0, bottom: 48 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={56} tick={{ fontSize: 10 }} />
+                    <YAxis allowDecimals={false} width={36} />
+                    <RechartsTooltip />
+                    <Bar
+                      dataKey="count"
+                      name={DASH_STUDENT.CHART_LEGEND_ATTEMPT_COUNT}
+                      fill={chartPrimary}
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Paper>
+              <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, bgcolor: 'background.paper' }}>
+                <Typography variant="subtitle1" className="font-display" sx={{ fontWeight: 800, mb: 1.5 }}>
+                  {DASH_STUDENT.CHART_ATTEMPTS_30D}
+                </Typography>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={chartAttemptsByDay} margin={{ top: 8, right: 16, left: 0, bottom: 48 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={52} />
+                    <YAxis allowDecimals={false} width={36} />
+                    <RechartsTooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      name={DASH_STUDENT.CHART_LEGEND_ATTEMPT_COUNT}
+                      stroke={chartSecondary}
+                      strokeWidth={2}
+                      dot
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Paper>
+            </Box>
+          </AdminSectionCard>
         </Box>
 
         <Box id="my-classes" sx={{ mt: 3 }}>
@@ -539,12 +653,27 @@ export function DashboardStudent() {
                 return (
                   <Paper key={c.id} elevation={0} sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ sm: 'center' }}>
-                      <Box>
+                      <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                        <Box
+                          component="img"
+                          src={classCoverUrl(c)}
+                          alt=""
+                          sx={{
+                            width: 88,
+                            height: 56,
+                            borderRadius: 1,
+                            objectFit: 'cover',
+                            flexShrink: 0,
+                            bgcolor: 'action.hover',
+                          }}
+                        />
+                        <Box sx={{ minWidth: 0 }}>
                         <Typography fontWeight={800}>{c.name}</Typography>
                         <Typography variant="caption" color="text.secondary">
                           {DASH_STUDENT.CHIP_LECTURES.replace('{n}', String(nLec))} · {DASH_STUDENT.CHIP_QUIZZES.replace('{n}', String(nQz))}
                         </Typography>
-                      </Box>
+                        </Box>
+                      </Stack>
                       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                         <Button
                           variant="outlined"
@@ -583,16 +712,7 @@ export function DashboardStudent() {
           )}
         </Box>
 
-        <Box
-          sx={{
-            mt: 3,
-            display: 'grid',
-            gap: 3,
-            gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(300px, 380px)' },
-            alignItems: 'start',
-          }}
-        >
-          <Stack spacing={3}>
+        <Stack spacing={3} sx={{ mt: 3 }}>
             <Box>
               <Typography variant="h6" component="h2" sx={{ fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif", fontWeight: 700 }}>
                 {DASH_STUDENT.MY_COURSES}
@@ -706,18 +826,21 @@ export function DashboardStudent() {
               ) : null}
               {hasEnrollments ? (
                 <Stack spacing={1.5} sx={{ mt: 2 }}>
-                  {rows.map((r, index) => {
+                  {rows.map((r) => {
                     const slug = r.courses?.slug;
                     if (!slug) return null;
                     const pack = learnBySlug[slug];
                     const lectures = pack?.lectures || [];
                     const quizzes = pack?.quizzes || [];
                     const courseTitle = r.courses?.title || slug;
-                    const defaultExpanded = index === 0 && (lectures.length > 0 || quizzes.length > 0);
                     return (
                       <Accordion
                         key={`acc-${r.id}`}
-                        defaultExpanded={defaultExpanded}
+                        expanded={learnAccordionExpandedId === r.id}
+                        onChange={(_, isExpanded) => {
+                          learnAccordionUserToggledRef.current = true;
+                          setLearnAccordionExpandedId(isExpanded ? r.id : null);
+                        }}
                         disableGutters
                         elevation={0}
                         sx={{
@@ -883,11 +1006,8 @@ export function DashboardStudent() {
               ) : null}
             </Box>
 
-            <Box sx={{ display: { xs: 'block', lg: 'none' } }}>{quizHistoryBlock}</Box>
-          </Stack>
-
-          <Box sx={{ display: { xs: 'none', lg: 'block' }, position: 'sticky', top: 24, alignSelf: 'start' }}>{quizHistoryBlock}</Box>
-        </Box>
+            {quizHistoryBlock}
+        </Stack>
       </Box>
     </>
   );

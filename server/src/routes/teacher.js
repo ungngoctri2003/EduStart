@@ -80,10 +80,126 @@ async function getOwnedClassById(classId, teacherId) {
   return { klass: data };
 }
 
+function toLocalYMD(iso) {
+  const x = new Date(iso);
+  if (Number.isNaN(x.getTime())) return null;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+function lastNLocalDayKeys(n) {
+  const keys = [];
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = new Date(base);
+    dt.setDate(dt.getDate() - i);
+    keys.push(
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+    );
+  }
+  return keys;
+}
+
+/** Aggregated stats for teacher dashboard (all owned classes). */
+r.get('/dashboard-stats', async (req, res) => {
+  const teacherId = req.user.id;
+  const { data: classes, error: cErr } = await supabaseAdmin
+    .from('classes')
+    .select('id, name, slug')
+    .eq('teacher_id', teacherId)
+    .order('created_at', { ascending: false });
+  if (cErr) return res.status(500).json({ error: cErr.message });
+  const list = classes || [];
+  if (list.length === 0) {
+    return res.json({
+      summary: {
+        classCount: 0,
+        studentEnrollments: 0,
+        lectureCount: 0,
+        quizCount: 0,
+        scheduleCount: 0,
+        attemptCount: 0,
+      },
+      byClass: [],
+      attemptsByDay: lastNLocalDayKeys(30).map((k) => {
+        const [, mo, d] = k.split('-');
+        return { day: `${d}/${mo}`, count: 0 };
+      }),
+    });
+  }
+  const classIds = list.map((c) => c.id);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 45);
+  const cutoffIso = cutoff.toISOString();
+
+  const [
+    { count: studentEnrollments },
+    { count: lectureCount },
+    { count: quizCount },
+    { count: scheduleCount },
+    { count: attemptCount },
+    { data: attemptRows, error: aErr },
+  ] = await Promise.all([
+    supabaseAdmin.from('class_students').select('*', { count: 'exact', head: true }).in('class_id', classIds),
+    supabaseAdmin.from('class_lectures').select('*', { count: 'exact', head: true }).in('class_id', classIds),
+    supabaseAdmin.from('class_quizzes').select('*', { count: 'exact', head: true }).in('class_id', classIds),
+    supabaseAdmin.from('class_schedules').select('*', { count: 'exact', head: true }).in('class_id', classIds),
+    supabaseAdmin.from('class_quiz_attempts').select('*', { count: 'exact', head: true }).in('class_id', classIds),
+    supabaseAdmin.from('class_quiz_attempts').select('submitted_at').in('class_id', classIds).gte('submitted_at', cutoffIso),
+  ]);
+
+  if (aErr) return res.status(500).json({ error: aErr.message });
+
+  const dayKeys = lastNLocalDayKeys(30);
+  const byDay = Object.fromEntries(dayKeys.map((k) => [k, 0]));
+  for (const row of attemptRows || []) {
+    const ymd = row.submitted_at ? toLocalYMD(row.submitted_at) : null;
+    if (ymd && Object.prototype.hasOwnProperty.call(byDay, ymd)) {
+      byDay[ymd] += 1;
+    }
+  }
+  const attemptsByDay = dayKeys.map((k) => {
+    const [, mo, d] = k.split('-');
+    return { day: `${d}/${mo}`, count: byDay[k] };
+  });
+
+  const byClass = await Promise.all(
+    list.map(async (c) => {
+      const [{ count: nStu }, { count: nLec }, { count: nQz }] = await Promise.all([
+        supabaseAdmin.from('class_students').select('*', { count: 'exact', head: true }).eq('class_id', c.id),
+        supabaseAdmin.from('class_lectures').select('*', { count: 'exact', head: true }).eq('class_id', c.id),
+        supabaseAdmin.from('class_quizzes').select('*', { count: 'exact', head: true }).eq('class_id', c.id),
+      ]);
+      const rawName = c.name || c.slug || '—';
+      const name = rawName.length > 22 ? `${String(rawName).slice(0, 20)}…` : rawName;
+      return {
+        name,
+        slug: c.slug,
+        students: nStu ?? 0,
+        lectures: nLec ?? 0,
+        quizzes: nQz ?? 0,
+      };
+    }),
+  );
+
+  res.json({
+    summary: {
+      classCount: list.length,
+      studentEnrollments: studentEnrollments ?? 0,
+      lectureCount: lectureCount ?? 0,
+      quizCount: quizCount ?? 0,
+      scheduleCount: scheduleCount ?? 0,
+      attemptCount: attemptCount ?? 0,
+    },
+    byClass,
+    attemptsByDay,
+  });
+});
+
 r.get('/classes', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('classes')
-    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id, created_at')
+    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id, created_at, image_url')
     .eq('teacher_id', req.user.id)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -115,8 +231,16 @@ r.patch('/classes/:slug', async (req, res) => {
   const gate = await getOwnedClass(req.params.slug, req.user.id);
   if (gate.error) return res.status(gate.status).json({ error: gate.error });
   const patch = {};
-  for (const k of ['name', 'description', 'status', 'starts_at', 'ends_at']) {
+  for (const k of ['name', 'description', 'status', 'starts_at', 'ends_at', 'image_url']) {
     if (req.body[k] !== undefined) patch[k] = req.body[k];
+  }
+  if (patch.image_url !== undefined) {
+    patch.image_url =
+      patch.image_url === null || patch.image_url === ''
+        ? null
+        : typeof patch.image_url === 'string'
+          ? patch.image_url.trim() || null
+          : null;
   }
   if (Object.keys(patch).length === 0) {
     return res.status(400).json({ error: 'No valid fields to update' });
