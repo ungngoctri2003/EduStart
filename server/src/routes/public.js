@@ -5,6 +5,25 @@ import { fetchCourseStatsMap, mergeCourseStats } from '../lib/courseStats.js';
 
 const r = Router();
 
+/** Active class rows per course (for catalog: hide standalone course price when classes handle fees). */
+async function fetchActiveClassCountByCourseIds(courseIds) {
+  const ids = [...new Set((courseIds || []).filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin
+    .from('classes')
+    .select('course_id')
+    .eq('status', 'active')
+    .in('course_id', ids);
+  if (error) throw new Error(error.message);
+  const map = new Map();
+  for (const row of data || []) {
+    const cid = row.course_id;
+    if (!cid) continue;
+    map.set(cid, (map.get(cid) || 0) + 1);
+  }
+  return map;
+}
+
 r.get('/courses', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('courses')
@@ -15,14 +34,18 @@ r.get('/courses', async (req, res) => {
   const list = data || [];
   try {
     const map = await fetchCourseStatsMap(list.map((c) => c.id));
-    const merged = list.map((c) => mergeCourseStats(c, map));
+    const activeMap = await fetchActiveClassCountByCourseIds(list.map((c) => c.id));
+    const merged = list.map((c) => ({
+      ...mergeCourseStats(c, map),
+      active_classes_count: activeMap.get(c.id) || 0,
+    }));
     res.json(merged);
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Failed to load course stats' });
   }
 });
 
-/** Must be before GET /courses/:slug so "reviews" is not captured as :slug (when slug = …); here :slug is first segment only for fixed paths — actually in Express, /courses/x/reviews matches first if registered first. */
+/** Must be before GET /courses/:slug so static path segments win. */
 r.get('/courses/:slug/reviews', optionalAuth, async (req, res) => {
   const { slug } = req.params;
   const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
@@ -89,6 +112,65 @@ r.get('/courses/:slug/reviews', optionalAuth, async (req, res) => {
   });
 });
 
+/** Single class under a published course (verify course_id matches). */
+r.get('/courses/:courseSlug/classes/:classSlug', async (req, res) => {
+  try {
+    const { courseSlug, classSlug } = req.params;
+    const { data: course, error: cErr } = await supabaseAdmin
+      .from('courses')
+      .select('id, slug, title, published')
+      .eq('slug', courseSlug)
+      .maybeSingle();
+    if (cErr) return res.status(500).json({ error: cErr.message });
+    if (!course || !course.published) return res.status(404).json({ error: 'Course not found' });
+    const { data: row, error } = await supabaseAdmin
+      .from('classes')
+      .select(
+        'id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url, price_cents, course_id',
+      )
+      .eq('slug', classSlug)
+      .eq('course_id', course.id)
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!row || row.status !== 'active') return res.status(404).json({ error: 'Class not found' });
+    const [enriched] = await enrichPublicClassRows([row]);
+    res.json({
+      ...enriched,
+      course: { id: course.id, slug: course.slug, title: course.title },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'Failed to load class' });
+  }
+});
+
+/** Active classes for enrollment under a published course. */
+r.get('/courses/:slug/classes', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { data: course, error: cErr } = await supabaseAdmin
+      .from('courses')
+      .select('id')
+      .eq('slug', slug)
+      .eq('published', true)
+      .maybeSingle();
+    if (cErr) return res.status(500).json({ error: cErr.message });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    const { data, error } = await supabaseAdmin
+      .from('classes')
+      .select(
+        'id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url, price_cents, course_id',
+      )
+      .eq('course_id', course.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    const out = await enrichPublicClassRows(data);
+    res.json((out || []).map((row) => ({ ...row, course_slug: slug })));
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'Failed to list classes' });
+  }
+});
+
 /** Published course metadata only (no lectures/quizzes — use /api/learn when enrolled). */
 r.get('/courses/:slug', async (req, res) => {
   const { data: course, error } = await supabaseAdmin
@@ -100,7 +182,9 @@ r.get('/courses/:slug', async (req, res) => {
   if (!course.published) return res.status(404).json({ error: 'Course not found' });
   try {
     const map = await fetchCourseStatsMap([course.id]);
-    res.json(mergeCourseStats({ ...course, lectures: [], quizzes: [] }, map));
+    const activeMap = await fetchActiveClassCountByCourseIds([course.id]);
+    const base = mergeCourseStats({ ...course, lectures: [], quizzes: [] }, map);
+    res.json({ ...base, active_classes_count: activeMap.get(course.id) || 0 });
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Failed to load course stats' });
   }
@@ -135,33 +219,33 @@ async function enrichPublicClassRows(rows) {
   }));
 }
 
-/** Public catalog: active classes only (no lecture/quiz bodies — use /api/class-learn when enrolled). */
+/** Deprecated: use GET /courses/:slug/classes. */
 r.get('/classes', async (_req, res) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('classes')
-      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url, price_cents')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-    const out = await enrichPublicClassRows(data);
-    res.json(out);
-  } catch (e) {
-    return res.status(500).json({ error: e.message || 'Failed to list classes' });
-  }
+  res.json([]);
 });
 
 r.get('/classes/:slug', async (req, res) => {
   try {
     const { data: row, error } = await supabaseAdmin
       .from('classes')
-      .select('id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url, price_cents')
+      .select(
+        'id, name, slug, description, status, starts_at, ends_at, created_at, teacher_id, image_url, price_cents, course_id',
+      )
       .eq('slug', req.params.slug)
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!row || row.status !== 'active') return res.status(404).json({ error: 'Class not found' });
+    let courseJson = null;
+    if (row.course_id) {
+      const { data: co } = await supabaseAdmin
+        .from('courses')
+        .select('id, slug, title')
+        .eq('id', row.course_id)
+        .maybeSingle();
+      if (co) courseJson = { id: co.id, slug: co.slug, title: co.title };
+    }
     const [enriched] = await enrichPublicClassRows([row]);
-    res.json(enriched);
+    res.json({ ...enriched, course: courseJson });
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Failed to load class' });
   }

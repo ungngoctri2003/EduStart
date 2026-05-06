@@ -11,6 +11,16 @@ SELECT 'Intro to Python', 'intro-to-python', 'Learn Python basics.', '/img/cours
 FROM public.categories c WHERE c.slug = 'python' LIMIT 1
 ON CONFLICT (slug) DO NOTHING;
 
+INSERT INTO public.courses (title, slug, description, thumbnail_url, published, price_cents, duration_hours, level, rating, learners_count, category_id)
+SELECT 'Lập trình Web cơ bản', 'lap-trinh-web-co-ban', 'HTML, CSS và JavaScript — khóa catalog khớp lớp lịch khai giảng.', '/img/course-1.png', true, 0, 12.0, 'Beginner', 4.6, '1K+', c.id
+FROM public.categories c WHERE c.slug = 'java' LIMIT 1
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO public.courses (title, slug, description, thumbnail_url, published, price_cents, duration_hours, level, rating, learners_count, category_id)
+SELECT 'Tiếng Anh giao tiếp', 'tieng-anh-giao-tiep', 'Phát âm, từ vựng và hội thoại — đăng ký theo từng lớp.', '/img/course-2.png', true, 0, 8.0, 'A2', 4.7, '2K+', c.id
+FROM public.categories c WHERE c.slug = 'aws' LIMIT 1
+ON CONFLICT (slug) DO NOTHING;
+
 INSERT INTO public.testimonials (author_name, author_title, content, rating, sort_order) VALUES
   ('Alex K.', 'Student', 'Great platform and courses!', 5, 1),
   ('Sam R.', 'Professional', 'Clear explanations and practical examples.', 5, 2);
@@ -18,3 +28,5 @@ INSERT INTO public.testimonials (author_name, author_title, content, rating, sor
 -- Lớp học: chạy `supabase db reset` sẽ nạp file này bằng psql (hỗ trợ \ir).
 -- Trong Supabase Dashboard → SQL Editor, nếu \ir lỗi, chạy riêng nội dung `supabase/seed_classes.sql`.
 \ir seed_classes.sql
+\ir seed_course_with_two_classes.sql
+\ir seed_two_more_courses_two_classes.sql

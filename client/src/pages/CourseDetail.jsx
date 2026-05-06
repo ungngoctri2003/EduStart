@@ -11,22 +11,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  FormControlLabel,
   Paper,
-  Radio,
-  RadioGroup,
   Rating,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { BookOpen, ChevronRight, ClipboardList, ListVideo, MessageCircle, Star } from 'lucide-react';
+import { GraduationCap, MessageCircle, Star } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { ClassCatalogCard } from '../components/ClassCatalogCard';
 import { apiFetch } from '../lib/api';
+import { useStudentCatalogAccess } from '../hooks/useStudentCatalogAccess';
 import { useAuth } from '../context/useAuth';
 import { ImageReveal, ScrollSection } from '../motion/ScrollBlock';
 import { COURSE_DETAIL, PAYMENT, COMMON, ERR } from '../strings/vi';
@@ -50,10 +46,8 @@ export function CourseDetail() {
   const [msg, setMsg] = useState('');
   const [enrolling, setEnrolling] = useState(false);
   const [myEnrollments, setMyEnrollments] = useState(null);
-  const [contentLoading, setContentLoading] = useState(false);
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
   const [nonStudentDialogOpen, setNonStudentDialogOpen] = useState(false);
-  const [learnTab, setLearnTab] = useState(0);
   const autoEnrollRunning = useRef(false);
   const [reviewBundle, setReviewBundle] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -62,10 +56,10 @@ export function CourseDetail() {
   const [formRating, setFormRating] = useState(5);
   const [formComment, setFormComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [paymentChoiceOpen, setPaymentChoiceOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
-  const [paymentNote, setPaymentNote] = useState('');
+  const [courseClasses, setCourseClasses] = useState([]);
+  const [courseClassesLoading, setCourseClassesLoading] = useState(false);
   const reduce = useReducedMotion() ?? false;
+  const { classPaymentById } = useStudentCatalogAccess();
 
   const isStudent = profile?.role === 'student';
   const courseId = course?.id;
@@ -73,26 +67,24 @@ export function CourseDetail() {
     Boolean(courseId) && Array.isArray(myEnrollments)
       ? myEnrollments.find((r) => r.course_id === courseId || r.courses?.id === courseId) ?? null
       : null;
-  const hasApprovedAccess =
+  const enrollApproved =
     Boolean(courseEnrollment) &&
     (courseEnrollment.payment_status === 'approved' || courseEnrollment.payment_status == null);
-  const hasPendingEnrollment = courseEnrollment?.payment_status === 'pending';
-  const hasRejectedEnrollment = courseEnrollment?.payment_status === 'rejected';
+  const hasScheduledClasses = !courseClassesLoading && courseClasses.length > 0;
+  const classApprovedForCourse =
+    Boolean(courseId) &&
+    courseClasses.some((k) => {
+      const st = classPaymentById.get(k.id);
+      return st === 'approved' || st == null;
+    });
+  const hasCourseAccess = enrollApproved || classApprovedForCourse;
 
-  const fetchLearnContent = useCallback(async () => {
-    if (!slug || !session?.access_token || !isStudent) return;
-    setContentLoading(true);
-    try {
-      const data = await apiFetch(`/api/learn/courses/${encodeURIComponent(slug)}`, {}, session.access_token);
-      setCourse((prev) => (prev ? { ...prev, lectures: data.lectures || [], quizzes: data.quizzes || [] } : prev));
-    } catch (e) {
-      if (e.status === 403 && e.data?.error === 'NOT_ENROLLED') {
-        setCourse((prev) => (prev ? { ...prev, lectures: [], quizzes: [] } : prev));
-      }
-    } finally {
-      setContentLoading(false);
-    }
-  }, [slug, session?.access_token, isStudent]);
+  const anyPendingPayment =
+    courseEnrollment?.payment_status === 'pending' ||
+    courseClasses.some((k) => classPaymentById.get(k.id) === 'pending');
+  const anyRejectedPayment =
+    courseEnrollment?.payment_status === 'rejected' ||
+    courseClasses.some((k) => classPaymentById.get(k.id) === 'rejected');
 
   const refreshMyEnrollments = useCallback(async () => {
     if (!session?.access_token || !isStudent) {
@@ -127,6 +119,31 @@ export function CourseDetail() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!slug) {
+      setCourseClasses([]);
+      setCourseClassesLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setCourseClassesLoading(true);
+    (async () => {
+      try {
+        const data = await apiFetch(`/api/courses/${encodeURIComponent(slug)}/classes`);
+        if (!cancelled) setCourseClasses(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setCourseClasses([]);
+      } finally {
+        if (!cancelled) setCourseClassesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!courseId || !session || !isStudent) {
         if (!cancelled) setMyEnrollments(session && !isStudent ? [] : null);
@@ -145,20 +162,10 @@ export function CourseDetail() {
   }, [courseId, session?.access_token, session, isStudent]);
 
   useEffect(() => {
-    if (!hasApprovedAccess || !isStudent || !slug || !session?.access_token) return;
-    void fetchLearnContent();
-  }, [hasApprovedAccess, isStudent, slug, session?.access_token, fetchLearnContent]);
-
-  useEffect(() => {
     return () => {
       autoEnrollRunning.current = false;
     };
   }, [slug]);
-
-  useEffect(() => {
-    if (location.hash === '#lectures-section') setLearnTab(0);
-    if (location.hash === '#quizzes-section') setLearnTab(1);
-  }, [location.hash]);
 
   const loadReviews = useCallback(async () => {
     if (!slug) return;
@@ -216,6 +223,7 @@ export function CourseDetail() {
   useEffect(() => {
     if (searchParams.get('enroll') !== '1' || !courseId || !session || !isStudent) return;
     if (myEnrollments === null) return;
+    if (courseClassesLoading) return;
     if (autoEnrollRunning.current) return;
     autoEnrollRunning.current = true;
 
@@ -224,6 +232,10 @@ export function CourseDetail() {
 
     (async () => {
       try {
+        if (courseClasses.length > 0) {
+          navigate(cleanPath, { replace: true });
+          return;
+        }
         if (row?.payment_status === 'approved' || (row && row.payment_status == null)) {
           navigate(cleanPath, { replace: true });
           return;
@@ -233,17 +245,38 @@ export function CourseDetail() {
           navigate(cleanPath, { replace: true });
           return;
         }
-        setPaymentMethod('bank_transfer');
-        setPaymentNote('');
-        setPaymentChoiceOpen(true);
+        try {
+          await apiFetch(
+            '/api/enrollments',
+            { method: 'POST', body: JSON.stringify({ course_id: courseId }) },
+            session.access_token,
+          );
+          setMsg(COURSE_DETAIL.ENROLL_SUCCESS);
+          await refreshMyEnrollments();
+        } catch (e) {
+          setMsg(e.data?.message || e.data?.error || e.message || ERR.ENROLL_FAILED);
+        }
         navigate(cleanPath, { replace: true });
       } finally {
         autoEnrollRunning.current = false;
       }
     })();
-  }, [searchParams, courseId, session, isStudent, myEnrollments, location.pathname, location.search, navigate]);
+  }, [
+    searchParams,
+    courseId,
+    session,
+    isStudent,
+    myEnrollments,
+    courseClassesLoading,
+    courseClasses.length,
+    location.pathname,
+    location.search,
+    navigate,
+    refreshMyEnrollments,
+  ]);
 
-  const returnPathForAuth = slug ? `/courses/${slug}?enroll=1` : '/dashboard';
+  const enrollViaCourseOnly = !courseClassesLoading && courseClasses.length === 0;
+  const returnPathForAuth = slug ? `/courses/${slug}${enrollViaCourseOnly ? '?enroll=1' : ''}` : '/dashboard';
 
   function openEnrollFlow() {
     setMsg('');
@@ -255,12 +288,10 @@ export function CourseDetail() {
       setNonStudentDialogOpen(true);
       return;
     }
-    setPaymentMethod('bank_transfer');
-    setPaymentNote('');
-    setPaymentChoiceOpen(true);
+    void confirmCourseEnroll();
   }
 
-  async function confirmPaymentEnroll() {
+  async function confirmCourseEnroll() {
     setMsg('');
     if (!session) {
       setEnrollDialogOpen(true);
@@ -273,45 +304,29 @@ export function CourseDetail() {
     if (!course?.id) return;
     setEnrolling(true);
     try {
-      const res = await apiFetch(
-        '/api/enrollments',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            course_id: course.id,
-            payment_method: paymentMethod,
-            payment_note: paymentNote.trim() ? paymentNote.trim() : null,
-          }),
-        },
-        session.access_token,
-      );
+      const res = await apiFetch('/api/enrollments', { method: 'POST', body: JSON.stringify({ course_id: course.id }) }, session.access_token);
       const st = res?.payment_status;
-      if (st === 'approved') {
+      if (st === 'approved' || st == null) {
         setMsg(COURSE_DETAIL.ENROLL_SUCCESS);
         await refreshMyEnrollments();
-        await fetchLearnContent();
       } else {
         setMsg(PAYMENT.PENDING_MSG);
         await refreshMyEnrollments();
       }
-      setPaymentChoiceOpen(false);
     } catch (e) {
       if (e.status === 409) {
         const st = e.data?.payment_status;
         if (st === 'approved') {
           setMsg(COURSE_DETAIL.ENROLL_SUCCESS);
           await refreshMyEnrollments();
-          await fetchLearnContent();
-          setPaymentChoiceOpen(false);
         } else if (st === 'pending') {
           setMsg(PAYMENT.ALREADY_PENDING);
           await refreshMyEnrollments();
-          setPaymentChoiceOpen(false);
         } else {
-          setMsg(e.data?.error || e.message || ERR.ENROLL_FAILED);
+          setMsg(e.data?.message || e.data?.error || e.message || ERR.ENROLL_FAILED);
         }
       } else {
-        setMsg(e.data?.error || e.message || ERR.ENROLL_FAILED);
+        setMsg(e.data?.message || e.data?.error || e.message || ERR.ENROLL_FAILED);
       }
     } finally {
       setEnrolling(false);
@@ -358,13 +373,6 @@ export function CourseDetail() {
 
   const enrollOk = msg === COURSE_DETAIL.ENROLL_SUCCESS;
   const enrollPendingInfo = msg === PAYMENT.PENDING_MSG || msg === PAYMENT.ALREADY_PENDING;
-  const lectures = Array.isArray(course.lectures) ? course.lectures : [];
-  const quizzes = Array.isArray(course.quizzes) ? course.quizzes : [];
-  const locked = !hasApprovedAccess || !isStudent;
-  const showContent = isStudent && hasApprovedAccess && !contentLoading;
-  const showContentSpinner = isStudent && hasApprovedAccess && contentLoading;
-  const lockedLearnHint = hasPendingEnrollment ? PAYMENT.PENDING_COURSE_LOCK : COURSE_DETAIL.LOCKED_HINT;
-  const lockedQuizHint = hasPendingEnrollment ? PAYMENT.PENDING_COURSE_LOCK : COURSE_DETAIL.LOCKED_QUIZZES;
 
   return (
     <>
@@ -389,8 +397,18 @@ export function CourseDetail() {
             <p className="mt-4 text-base-content/80">{course.description || COURSE_DETAIL.NO_DESC}</p>
             <p className="mt-4 text-sm text-base-content/70">
               <strong>{COURSE_DETAIL.LEVEL}:</strong> {course.level || '—'} · <strong>{COURSE_DETAIL.DURATION}:</strong>{' '}
-              {course.duration_hours != null ? `${course.duration_hours} ${COMMON.HOURS}` : '—'} ·{' '}
-              <strong>{COMMON.FEE_LABEL}:</strong> {formatVndFromPriceCentsOrFree(course.price_cents, COMMON.FREE)}
+              {course.duration_hours != null ? `${course.duration_hours} ${COMMON.HOURS}` : '—'}
+              {hasScheduledClasses ? (
+                <>
+                  {' '}
+                  · <strong>{COMMON.FEE_LABEL}:</strong> {COURSE_DETAIL.FEE_VIA_CLASS}
+                </>
+              ) : (
+                <>
+                  {' '}
+                  · <strong>{COMMON.FEE_LABEL}:</strong> {formatVndFromPriceCentsOrFree(course.price_cents, COMMON.FREE)}
+                </>
+              )}
             </p>
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} sx={{ mt: 1.5, rowGap: 1 }}>
               {course.review_avg != null ? (
@@ -421,28 +439,28 @@ export function CourseDetail() {
                 {msg}
               </Alert>
             ) : null}
-            {isStudent && hasPendingEnrollment && !msg ? (
+            {isStudent && !hasCourseAccess && anyPendingPayment && !msg ? (
               <Alert severity="warning" sx={{ mt: 2 }}>
                 {PAYMENT.PENDING_MSG}
               </Alert>
             ) : null}
-            {isStudent && hasRejectedEnrollment && !msg ? (
+            {isStudent && !hasCourseAccess && anyRejectedPayment && !anyPendingPayment && !msg ? (
               <Alert severity="warning" sx={{ mt: 2 }}>
                 {PAYMENT.REJECTED_HINT}
               </Alert>
             ) : null}
             <Stack direction="row" spacing={2} sx={{ mt: 3 }} flexWrap="wrap" useFlexGap>
-              {isStudent && hasApprovedAccess ? (
+              {isStudent && hasCourseAccess ? (
                 <Button type="button" variant="outlined" color="primary" component={Link} to={`/dashboard/student`}>
                   {COURSE_DETAIL.GO_DASHBOARD}
                 </Button>
               ) : null}
-              {isStudent && hasApprovedAccess ? (
-                <Button type="button" variant="text" color="primary" href="#course-learn" sx={{ alignSelf: 'center' }}>
-                  {COURSE_DETAIL.GO_STUDY}
+              {isStudent && hasCourseAccess && !courseClassesLoading && courseClasses.length > 0 ? (
+                <Button type="button" variant="text" color="primary" href="#course-classes-section" sx={{ alignSelf: 'center' }}>
+                  {COURSE_DETAIL.NAV_TO_CLASSES}
                 </Button>
               ) : null}
-              {isStudent && !hasApprovedAccess && !hasPendingEnrollment ? (
+              {isStudent && !hasCourseAccess && !anyPendingPayment && !courseClassesLoading && courseClasses.length === 0 ? (
                 <Button type="button" variant="contained" color="primary" disabled={enrolling} onClick={openEnrollFlow}>
                   {enrolling ? <CircularProgress size={22} color="inherit" sx={{ mr: 1 }} /> : null}
                   {enrolling ? COURSE_DETAIL.ENROLLING : COURSE_DETAIL.ENROLL}
@@ -452,10 +470,102 @@ export function CourseDetail() {
           </ScrollSection>
         </div>
 
+        <ScrollSection reduced={reduce} className="w-full" as="section" id="course-classes-section">
+          <Paper
+            elevation={0}
+            sx={{
+              mt: { xs: 5, md: 6 },
+              p: { xs: 2.25, sm: 3 },
+              borderRadius: 3,
+              border: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
+              boxShadow: (t) => (t.palette.mode === 'dark' ? 'none' : `0 1px 3px ${alpha(t.palette.common.black, 0.06)}`),
+            }}
+          >
+            <Stack
+              direction="row"
+              alignItems="flex-start"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              useFlexGap
+              spacing={2}
+              sx={{ gap: 2, mb: 2 }}
+            >
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0, flex: '1 1 240px' }}>
+                <Box
+                  sx={{
+                    p: 1.25,
+                    borderRadius: 2.5,
+                    bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.18 : 0.12),
+                    color: 'primary.main',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <GraduationCap className="h-7 w-7" aria-hidden />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="overline" color="primary" sx={{ fontWeight: 800, letterSpacing: '0.09em', lineHeight: 1.2, display: 'block' }}>
+                    {COURSE_DETAIL.CLASSES_SECTION_OVERLINE}
+                  </Typography>
+                  <Typography component="h2" variant="h5" className="font-display" sx={{ fontWeight: 800, mt: 0.25 }}>
+                    {COURSE_DETAIL.SECTION_CLASSES}
+                  </Typography>
+                </Box>
+              </Stack>
+              {!courseClassesLoading && courseClasses.length > 0 ? (
+                <Chip
+                  label={COURSE_DETAIL.CLASSES_OPEN_BADGE.replace('{n}', String(courseClasses.length))}
+                  color="primary"
+                  variant="outlined"
+                  size="small"
+                  sx={{ fontWeight: 700, flexShrink: 0 }}
+                />
+              ) : null}
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, maxWidth: '48rem', lineHeight: 1.65 }}>
+              {COURSE_DETAIL.CLASSES_LEAD}
+            </Typography>
+            {courseClassesLoading ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+                <CircularProgress size={24} />
+                <Typography color="text.secondary">{COMMON.LOADING}</Typography>
+              </Box>
+            ) : null}
+            {!courseClassesLoading && courseClasses.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {COURSE_DETAIL.NO_CLASSES}
+              </Typography>
+            ) : null}
+            {!courseClassesLoading && courseClasses.length > 0 ? (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 2.5,
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                }}
+              >
+                {courseClasses.map((k) => (
+                  <ClassCatalogCard
+                    key={k.id}
+                    klass={k}
+                    courseSlug={k.course_slug ?? slug}
+                    paymentStatus={classPaymentById.get(k.id) ?? null}
+                  />
+                ))}
+              </Box>
+            ) : null}
+          </Paper>
+        </ScrollSection>
+
         <ScrollSection reduced={reduce} className="w-full" as="section">
           <Paper
             elevation={0}
             sx={{
+              mt: { xs: 5, md: 6 },
               p: { xs: 2, sm: 3 },
               borderRadius: 3,
               border: 1,
@@ -500,7 +610,7 @@ export function CourseDetail() {
                     variant="outlined"
                   />
                 </Stack>
-                {isStudent && hasApprovedAccess ? (
+                {isStudent && hasCourseAccess ? (
                   <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'action.hover' }}>
                     <Typography fontWeight={700} sx={{ mb: 1.5 }}>
                       {COURSE_DETAIL.YOUR_REVIEW}
@@ -539,7 +649,7 @@ export function CourseDetail() {
                       {reviewSubmitting ? COURSE_DETAIL.SAVING_REVIEW : COURSE_DETAIL.SUBMIT_REVIEW}
                     </Button>
                   </Paper>
-                ) : isStudent && !hasApprovedAccess ? (
+                ) : isStudent && !hasCourseAccess ? (
                   <Alert severity="info" sx={{ mb: 2 }}>
                     {COURSE_DETAIL.REVIEW_MUST_ENROLL}
                   </Alert>
@@ -589,410 +699,6 @@ export function CourseDetail() {
           </Paper>
         </ScrollSection>
 
-        <Divider sx={{ my: 6 }} />
-
-        <ScrollSection reduced={reduce} className="mx-auto w-full max-w-[920px]">
-        <Box
-          id="course-learn"
-          component="section"
-          sx={{
-            scrollMarginTop: { xs: 72, md: 96 },
-            mb: 6,
-            width: 1,
-          }}
-        >
-          <Paper
-            elevation={0}
-            sx={{
-              borderRadius: 3,
-              overflow: 'hidden',
-              bgcolor: 'background.paper',
-              boxShadow: (t) => t.shadows[2],
-            }}
-          >
-            <Tabs
-              value={learnTab}
-              onChange={(_, v) => setLearnTab(v)}
-              variant="fullWidth"
-              sx={(theme) => ({
-                minHeight: 52,
-                borderBottom: `1px solid ${theme.palette.divider}`,
-                bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.04),
-                '& .MuiTab-root': { py: 1.5, fontWeight: 700, typography: 'body1' },
-              })}
-            >
-              <Tab
-                id="lectures-tab"
-                aria-controls="lectures-section"
-                label={COURSE_DETAIL.SECTION_LECTURES}
-                href="#lectures-section"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setLearnTab(0);
-                  window.history.replaceState(null, '', '#lectures-section');
-                }}
-              />
-              <Tab
-                id="quizzes-tab"
-                aria-controls="quizzes-section"
-                label={COURSE_DETAIL.SECTION_QUIZZES}
-                href="#quizzes-section"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setLearnTab(1);
-                  window.history.replaceState(null, '', '#quizzes-section');
-                }}
-              />
-            </Tabs>
-
-            <Box
-              id="lectures-section"
-              role="tabpanel"
-              aria-labelledby="lectures-tab"
-              hidden={learnTab !== 0}
-              sx={{ display: learnTab === 0 ? 'block' : 'none', p: { xs: 2, sm: 2.5, md: 3 } }}
-            >
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: { xs: 2, md: 2.5 },
-                  mb: 2.5,
-                  borderRadius: 2,
-                  border: `1px solid ${theme.palette.divider}`,
-                  background:
-                    theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.primary.main, 0.12)
-                      : `linear-gradient(125deg, ${alpha(theme.palette.primary.main, 0.09)} 0%, ${alpha(theme.palette.primary.light, 0.04)} 48%, ${alpha(theme.palette.background.paper, 1)} 100%)`,
-                })}
-              >
-                <Stack direction="row" spacing={2} alignItems="flex-start">
-                  <Box
-                    sx={(theme) => ({
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2,
-                      flexShrink: 0,
-                      color: 'primary.main',
-                      bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.14),
-                    })}
-                  >
-                    <BookOpen className="h-6 w-6" aria-hidden />
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography component="h2" variant="h5" className="font-display" sx={{ fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
-                      {COURSE_DETAIL.SECTION_LECTURES}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                      {COURSE_DETAIL.LECTURES_SUBTITLE}
-                    </Typography>
-                    {showContent && lectures.length > 0 ? (
-                      <Chip
-                        size="small"
-                        icon={<ListVideo className="h-3.5 w-3.5" aria-hidden />}
-                        label={`${lectures.length} bài`}
-                        sx={{ mt: 1.25, fontWeight: 700 }}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    ) : null}
-                  </Box>
-                </Stack>
-              </Paper>
-
-              {showContentSpinner ? (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 3,
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    borderStyle: 'dashed',
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <CircularProgress size={28} />
-                  <Typography color="text.secondary" fontWeight={500}>
-                    {COMMON.LOADING}
-                  </Typography>
-                </Paper>
-              ) : null}
-              {locked && !showContentSpinner ? (
-                <Alert severity="info" sx={{ borderRadius: 2 }}>
-                  {lockedLearnHint}
-                </Alert>
-              ) : null}
-              {showContent && lectures.length === 0 ? (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    py: 5,
-                    px: 2,
-                    textAlign: 'center',
-                    borderRadius: 2,
-                    borderStyle: 'dashed',
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <ListVideo className="mx-auto mb-2 h-10 w-10 opacity-35" aria-hidden />
-                  <Typography color="text.secondary">{COURSE_DETAIL.NO_LECTURES}</Typography>
-                </Paper>
-              ) : null}
-              {showContent && lectures.length > 0 ? (
-                <Stack spacing={1.25}>
-                  {lectures.map((lec, li) => {
-                    const blocks = Array.isArray(lec.blocks) ? lec.blocks : [];
-                    const nBlocks = blocks.length;
-                    const to = `/courses/${encodeURIComponent(slug)}/lecture/${encodeURIComponent(lec.id)}`;
-                    return (
-                      <Paper
-                        key={lec.id}
-                        component={Link}
-                        to={to}
-                        elevation={0}
-                        sx={(theme) => ({
-                          border: `1px solid ${theme.palette.divider}`,
-                          borderRadius: 2,
-                          textDecoration: 'none',
-                          color: 'inherit',
-                          display: 'block',
-                          boxShadow: theme.palette.mode === 'dark' ? 'none' : `0 1px 2px ${alpha(theme.palette.common.black, 0.04)}`,
-                          transition: 'box-shadow 0.2s, border-color 0.2s, background-color 0.2s',
-                          '&:hover': {
-                            borderColor: alpha(theme.palette.primary.main, 0.45),
-                            boxShadow: theme.palette.mode === 'dark' ? `0 0 0 1px ${alpha(theme.palette.primary.main, 0.35)}` : `0 8px 24px ${alpha(theme.palette.primary.main, 0.12)}`,
-                            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.03),
-                          },
-                        })}
-                      >
-                        <Box
-                          sx={{
-                            px: 2,
-                            py: 1.25,
-                            minHeight: 64,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                          }}
-                        >
-                          <Box
-                            sx={(theme) => ({
-                              width: 36,
-                              height: 36,
-                              borderRadius: '10px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 800,
-                              fontSize: '0.875rem',
-                              flexShrink: 0,
-                              bgcolor: alpha(theme.palette.primary.main, 0.15),
-                              color: 'primary.main',
-                            })}
-                          >
-                            {li + 1}
-                          </Box>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography sx={{ fontWeight: 700, typography: 'subtitle1' }}>{lec.title}</Typography>
-                            {nBlocks > 0 ? (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                {COURSE_DETAIL.LECTURE_PARTS.replace('{n}', String(nBlocks))}
-                              </Typography>
-                            ) : null}
-                          </Box>
-                          {nBlocks > 0 ? (
-                            <Chip label={nBlocks} size="small" sx={{ fontWeight: 800, display: { xs: 'none', sm: 'flex' } }} />
-                          ) : null}
-                          <ChevronRight className="h-5 w-5 shrink-0 opacity-55" aria-hidden />
-                        </Box>
-                      </Paper>
-                    );
-                  })}
-                </Stack>
-              ) : null}
-            </Box>
-
-            <Box
-              id="quizzes-section"
-              role="tabpanel"
-              aria-labelledby="quizzes-tab"
-              hidden={learnTab !== 1}
-              sx={{ display: learnTab === 1 ? 'block' : 'none', p: { xs: 2, sm: 2.5, md: 3 } }}
-            >
-              <Paper
-                elevation={0}
-                sx={(theme) => ({
-                  p: { xs: 2, md: 2.5 },
-                  mb: 2.5,
-                  borderRadius: 2,
-                  border: `1px solid ${theme.palette.divider}`,
-                  background:
-                    theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.primary.main, 0.12)
-                      : `linear-gradient(125deg, ${alpha(theme.palette.primary.main, 0.09)} 0%, ${alpha(theme.palette.primary.light, 0.04)} 48%, ${alpha(theme.palette.background.paper, 1)} 100%)`,
-                })}
-              >
-                <Stack direction="row" spacing={2} alignItems="flex-start">
-                  <Box
-                    sx={(theme) => ({
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2,
-                      flexShrink: 0,
-                      color: 'primary.main',
-                      bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.14),
-                    })}
-                  >
-                    <ClipboardList className="h-6 w-6" aria-hidden />
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography component="h2" variant="h5" className="font-display" sx={{ fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
-                      {COURSE_DETAIL.SECTION_QUIZZES}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                      {COURSE_DETAIL.QUIZZES_SUBTITLE}
-                    </Typography>
-                    {showContent && quizzes.length > 0 ? (
-                      <Chip
-                        size="small"
-                        icon={<ClipboardList className="h-3.5 w-3.5" aria-hidden />}
-                        label={`${quizzes.length} bài`}
-                        sx={{ mt: 1.25, fontWeight: 700 }}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    ) : null}
-                  </Box>
-                </Stack>
-              </Paper>
-
-              {showContentSpinner ? (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 3,
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    borderStyle: 'dashed',
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <CircularProgress size={28} />
-                  <Typography color="text.secondary" fontWeight={500}>
-                    {COMMON.LOADING}
-                  </Typography>
-                </Paper>
-              ) : null}
-              {locked && !showContentSpinner ? (
-                <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
-                  {lockedQuizHint}
-                </Alert>
-              ) : null}
-              {showContent && quizzes.length === 0 ? (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    py: 5,
-                    px: 2,
-                    textAlign: 'center',
-                    borderRadius: 2,
-                    borderStyle: 'dashed',
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <ClipboardList className="mx-auto mb-2 h-10 w-10 opacity-35" aria-hidden />
-                  <Typography color="text.secondary">{COURSE_DETAIL.NO_QUIZZES}</Typography>
-                </Paper>
-              ) : null}
-              {showContent && quizzes.length > 0 ? (
-                <Stack spacing={1.25}>
-                  {quizzes.map((quiz, qIdx) => {
-                    const nQ = (quiz.questions || []).length;
-                    const to = `/courses/${encodeURIComponent(slug)}/quiz/${encodeURIComponent(quiz.id)}`;
-                    return (
-                      <Paper
-                        key={quiz.id}
-                        component={Link}
-                        to={to}
-                        elevation={0}
-                        sx={(theme) => ({
-                          border: `1px solid ${theme.palette.divider}`,
-                          borderRadius: 2,
-                          textDecoration: 'none',
-                          color: 'inherit',
-                          display: 'block',
-                          boxShadow: theme.palette.mode === 'dark' ? 'none' : `0 1px 2px ${alpha(theme.palette.common.black, 0.04)}`,
-                          transition: 'box-shadow 0.2s, border-color 0.2s, background-color 0.2s',
-                          '&:hover': {
-                            borderColor: alpha(theme.palette.primary.main, 0.45),
-                            boxShadow: theme.palette.mode === 'dark' ? `0 0 0 1px ${alpha(theme.palette.primary.main, 0.35)}` : `0 8px 24px ${alpha(theme.palette.primary.main, 0.12)}`,
-                            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.03),
-                          },
-                        })}
-                      >
-                        <Box
-                          sx={{
-                            px: 2,
-                            py: 1.25,
-                            minHeight: 64,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                          }}
-                        >
-                          <Box
-                            sx={(theme) => ({
-                              width: 36,
-                              height: 36,
-                              borderRadius: '10px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 800,
-                              fontSize: '0.875rem',
-                              flexShrink: 0,
-                              bgcolor: alpha(theme.palette.primary.main, 0.15),
-                              color: 'primary.main',
-                            })}
-                          >
-                            {qIdx + 1}
-                          </Box>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography sx={{ fontWeight: 700, typography: 'subtitle1' }}>{quiz.title}</Typography>
-                            {quiz.description ? (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }} noWrap>
-                                {quiz.description}
-                              </Typography>
-                            ) : null}
-                            {nQ > 0 ? (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                {COURSE_DETAIL.QUIZ_Q_COUNT.replace('{n}', String(nQ))}
-                              </Typography>
-                            ) : null}
-                          </Box>
-                          {nQ > 0 ? (
-                            <Chip label={nQ} size="small" sx={{ fontWeight: 800, display: { xs: 'none', sm: 'flex' } }} />
-                          ) : null}
-                          <ChevronRight className="h-5 w-5 shrink-0 opacity-55" aria-hidden />
-                        </Box>
-                      </Paper>
-                    );
-                  })}
-                </Stack>
-              ) : null}
-            </Box>
-          </Paper>
-        </Box>
-        </ScrollSection>
       </div>
 
       <Dialog open={enrollDialogOpen} onClose={() => setEnrollDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -1023,44 +729,6 @@ export function CourseDetail() {
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={paymentChoiceOpen}
-        onClose={() => !enrolling && setPaymentChoiceOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>{PAYMENT.DIALOG_TITLE}</DialogTitle>
-        <DialogContent>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            <strong>{COMMON.FEE_LABEL}:</strong> {formatVndFromPriceCentsOrFree(course.price_cents, COMMON.FREE)}
-          </Alert>
-          <RadioGroup value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-            <FormControlLabel value="cash" control={<Radio />} label={PAYMENT.METHOD_CASH} />
-            <FormControlLabel value="bank_transfer" control={<Radio />} label={PAYMENT.METHOD_BANK} />
-            <FormControlLabel value="momo" control={<Radio />} label={PAYMENT.METHOD_MOMO} />
-            <FormControlLabel value="vnpay" control={<Radio />} label={PAYMENT.METHOD_VNPAY} />
-          </RadioGroup>
-          <TextField
-            fullWidth
-            size="small"
-            margin="dense"
-            label={PAYMENT.NOTE_LABEL}
-            helperText={PAYMENT.NOTE_HELPER}
-            value={paymentNote}
-            onChange={(e) => setPaymentNote(e.target.value)}
-            sx={{ mt: 1.5 }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Button onClick={() => setPaymentChoiceOpen(false)} disabled={enrolling}>
-            {COMMON.CANCEL}
-          </Button>
-          <Button variant="contained" onClick={() => void confirmPaymentEnroll()} disabled={enrolling}>
-            {enrolling ? <CircularProgress size={22} color="inherit" sx={{ mr: 1 }} /> : null}
-            {PAYMENT.CONFIRM}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 }

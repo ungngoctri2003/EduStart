@@ -15,14 +15,28 @@ export function LectureDetail() {
   const [course, setCourse] = useState(null);
   const [err, setErr] = useState('');
   const [myEnrollments, setMyEnrollments] = useState(null);
+  const [classMemberships, setClassMemberships] = useState(null);
   const [contentLoading, setContentLoading] = useState(false);
 
   const isStudent = profile?.role === 'student';
   const courseId = course?.id;
-  const isEnrolled =
+  const hasEnrollAccess =
     Boolean(courseId) &&
     Array.isArray(myEnrollments) &&
-    myEnrollments.some((r) => r.course_id === courseId || r.courses?.id === courseId);
+    myEnrollments.some(
+      (r) =>
+        (r.course_id === courseId || r.courses?.id === courseId) &&
+        (r.payment_status === 'approved' || r.payment_status == null),
+    );
+  const hasClassCourseAccess =
+    Boolean(courseId) &&
+    Array.isArray(classMemberships) &&
+    classMemberships.some(
+      (m) =>
+        (m.class?.course?.id === courseId || m.class?.course?.slug === slug) &&
+        (m.payment_status === 'approved' || m.payment_status == null),
+    );
+  const isEnrolled = hasEnrollAccess || hasClassCourseAccess;
 
   const fetchLearnContent = useCallback(async () => {
     if (!slug || !session?.access_token || !isStudent) return;
@@ -73,6 +87,25 @@ export function LectureDetail() {
       cancelled = true;
     };
   }, [courseId, session?.access_token, session, isStudent]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!session?.access_token || !isStudent) {
+        if (!cancelled) setClassMemberships(session && !isStudent ? [] : null);
+        return;
+      }
+      try {
+        const data = await apiFetch('/api/class-learn/me', {}, session.access_token);
+        if (!cancelled) setClassMemberships(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setClassMemberships([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, session, isStudent]);
 
   useEffect(() => {
     if (!isEnrolled || !isStudent || !slug || !session?.access_token) return;

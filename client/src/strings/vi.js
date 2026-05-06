@@ -237,6 +237,8 @@ export const COURSES_PAGE = {
   EMPTY: 'Chưa có khóa học được xuất bản. Hãy seed cơ sở dữ liệu hoặc thêm từ quản trị.',
   VIEW_COURSE_ARIA: 'Xem chi tiết khóa học',
   OPEN_COURSE: 'Xem khóa học',
+  /** Thẻ danh mục: khóa có lớp active — học phí gắn với lớp, không hiện giá khóa. */
+  CATALOG_PRICE_VIA_CLASS: 'Theo lớp',
 };
 
 export const CLASSES_PAGE = {
@@ -246,7 +248,10 @@ export const CLASSES_PAGE = {
   SUB: 'Chọn lớp để xem mô tả và tham gia học tập cùng giảng viên.',
   EMPTY: 'Chưa có lớp nào đang mở. Hãy thử lại sau hoặc liên hệ hỗ trợ.',
   VIEW_CLASS_ARIA: 'Xem chi tiết lớp',
-  OPEN_CLASS: 'Xem lớp',
+  OPEN_CLASS: 'Xem chi tiết lớp',
+  META_STARTS: 'Khai giảng',
+  META_TEACHER: 'Giảng viên',
+  META_STUDENTS: 'Đã đăng ký',
 };
 
 /** Badge trên thẻ danh mục khi học viên đã đăng ký / chờ duyệt (chỉ hiện khi đã đăng nhập học viên). */
@@ -319,6 +324,7 @@ export const COURSE_DETAIL = {
   NO_DESC: 'Chưa có mô tả.',
   LEVEL: 'Cấp độ',
   DURATION: 'Thời lượng',
+  FEE_VIA_CLASS: 'Học phí và thanh toán khi bạn chọn một lớp bên dưới.',
   ENROLL: 'Đăng ký ngay',
   ENROLLING: 'Đang đăng ký…',
   ENROLL_SUCCESS: 'Đăng ký thành công!',
@@ -326,6 +332,11 @@ export const COURSE_DETAIL = {
   ONLY_STUDENT: 'Chỉ học viên mới có thể thực hiện thao tác này.',
   LOGIN_LINK: 'Đăng nhập',
   LOGIN_SUFFIX: ' với tư cách học viên để đăng ký.',
+  SECTION_CLASSES: 'Các lớp khai giảng',
+  CLASSES_SECTION_OVERLINE: 'Chọn lớp phù hợp',
+  CLASSES_OPEN_BADGE: '{n} lớp đang mở',
+  CLASSES_LEAD: 'Chọn một lớp để đăng ký theo lịch (nội dung lớp và hỗ trợ từ giáo viên).',
+  NO_CLASSES: 'Khóa này chưa có lớp đang mở.',
   SECTION_LECTURES: 'Bài giảng',
   LECTURES_SUBTITLE: 'Danh sách bài theo thứ tự. Bấm vào từng bài để xem trang chi tiết.',
   LECTURE_PARTS: '{n} phần nội dung',
@@ -341,7 +352,11 @@ export const COURSE_DETAIL = {
   OPEN_VIDEO: 'Mở video',
   LOCKED_HINT:
     'Nội dung bài giảng chỉ dành cho học viên đã đăng ký. Hãy đăng ký khóa học để xem và học.',
+  LOCKED_HINT_CLASSES:
+    'Nội dung khóa chỉ mở cho học viên đã đăng ký. Khóa này tổ chức theo lớp — hãy chọn một lớp bên dưới để đăng ký và thanh toán (nếu có).',
   LOCKED_QUIZZES: 'Bài kiểm tra chỉ khả dụng sau khi bạn đã đăng ký khóa học.',
+  LOCKED_QUIZZES_CLASSES:
+    'Bài kiểm tra của khóa chỉ mở sau khi bạn đăng ký. Với khóa có lớp khai giảng, hãy đăng ký qua một lớp bên dưới.',
   DIALOG_AUTH_TITLE: 'Cần đăng nhập hoặc đăng ký',
   DIALOG_AUTH_BODY:
     'Vui lòng đăng nhập hoặc tạo tài khoản học viên để đăng ký và học khóa học này.',
@@ -350,6 +365,7 @@ export const COURSE_DETAIL = {
   DIALOG_ROLE_TITLE: 'Không thể đăng ký',
   GO_DASHBOARD: 'Bảng học viên',
   GO_STUDY: 'Vào học',
+  NAV_TO_CLASSES: 'Xem lớp khai giảng',
   RATING: 'Điểm trung bình',
   ENROLLMENT_LABEL: 'Học viên đã đăng ký',
   REVIEW_VOTES: 'lượt đánh giá',
@@ -537,7 +553,7 @@ export const DASH_ADMIN = {
   USER_CHART_SIGNUPS_30D: 'Tài khoản mới 30 ngày gần đây',
   USER_CHART_LEGEND_COUNT: 'Số người dùng',
   USER_CHART_LEGEND_NEW_PER_DAY: 'Tài khoản mới trong ngày',
-  LEAD_COURSES: 'Tạo khóa học, quản lý danh sách và biên soạn bài giảng, bài kiểm tra.',
+  LEAD_COURSES: 'Tạo và chỉnh khóa học tại đây. Bài giảng và trắc nghiệm gắn với từng lớp — quản lý trong mục Lớp học.',
   LEAD_ENROLLMENTS: 'Theo dõi học viên đã đăng ký theo khóa và theo thời gian.',
   LEAD_QUIZ_ANALYTICS: 'Tổng hợp lượt làm bài, điểm trung bình và phân bố kết quả.',
   SECTION_ADD_COURSE: 'Tạo khóa học mới',
@@ -570,6 +586,7 @@ export const DASH_ADMIN = {
   CONFIRM_DEL: 'Xóa mục này?',
   TABS: {
     users: 'Người dùng',
+    /** Nhãn mục con trong tab Khóa học (không còn tab cấp một riêng). */
     classes: 'Lớp học',
     courses: 'Khóa học',
     payments: 'Thanh toán',
@@ -577,7 +594,7 @@ export const DASH_ADMIN = {
     quiz_stats: 'Bài kiểm tra',
     content: 'Đội ngũ & đánh giá',
   },
-  PAYMENTS_LEAD: 'Phê duyệt thanh toán đăng ký khóa học và tham gia lớp.',
+  PAYMENTS_LEAD: 'Phê duyệt thanh toán tham gia lớp (và đăng ký khóa cũ / tồn đọng nếu có).',
   PAYMENTS_SUB_COURSES: 'Khóa học',
   PAYMENTS_SUB_CLASSES: 'Lớp học',
   PAYMENTS_FILTER_STATUS: 'Trạng thái',
@@ -606,8 +623,8 @@ export const DASH_ADMIN = {
   PAYMENTS_METHOD_UNSET: 'Không khai báo / khác',
   PAYMENTS_PRICE_NONE: '—',
   PAYMENTS_TOAST_UPDATED: 'Đã cập nhật trạng thái thanh toán.',
-  /** Mục con trong tab Khóa học (đăng ký & bài kiểm tra nằm dưới đây). */
-  COURSE_AREA_OVERVIEW: 'Khóa học & nội dung',
+  /** Mục con: danh sách khóa, tạo/sửa metadata khóa (nội dung học nằm ở Lớp học). */
+  COURSE_AREA_OVERVIEW: 'Danh mục khóa',
   TABLE_PAGINATION_LABEL_ROWS: 'Dòng mỗi trang',
   CMS_INTRO: 'Nội dung công khai và hộp thư người dùng.',
   CMS_SUBTAB_TEAM: 'Đội ngũ',
@@ -790,10 +807,12 @@ export const DASH_ADMIN = {
   CLASS_TEACHER: 'Giáo viên phụ trách',
   CLASS_NAME_REQUIRED: 'Vui lòng nhập tên lớp.',
   CLASS_TEACHER_REQUIRED: 'Vui lòng chọn giáo viên phụ trách.',
+  CLASS_COURSE_REQUIRED: 'Vui lòng chọn khóa học mà lớp này thuộc về.',
   CLASS_STATUS: 'Trạng thái',
   CLASS_STATUS_ACTIVE: 'Đang mở',
   CLASS_STATUS_ARCHIVED: 'Lưu trữ',
   TH_CLASS_SLUG: 'Slug',
+  TH_COURSE: 'Khóa học',
   TH_CLASS_TEACHER: 'Giáo viên',
   BTN_MANAGE_CLASS: 'Chi tiết',
   CLASS_STUDENTS_TITLE: 'Học sinh trong lớp',

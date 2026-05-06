@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../supabase.js';
 import { insertQuizAttempt, loadCourseLecturesAndQuizzes, scoreQuizSubmission } from '../lib/courseContent.js';
+import { studentHasCourseAccess } from '../lib/courseAccess.js';
 
 const r = Router();
 
-async function assertStudentEnrolledInCourse(req, slug) {
+async function assertStudentCourseLearnAccess(req, slug) {
   const { data: course, error: cErr } = await supabaseAdmin
     .from('courses')
     .select('id, slug, published')
@@ -14,21 +15,15 @@ async function assertStudentEnrolledInCourse(req, slug) {
   if (cErr || !course) return { error: 'Course not found', status: 404 };
   if (!course.published) return { error: 'Course not found', status: 404 };
 
-  const { data: enr, error: eErr } = await supabaseAdmin
-    .from('enrollments')
-    .select('id')
-    .eq('student_id', req.user.id)
-    .eq('course_id', course.id)
-    .eq('payment_status', 'approved')
-    .maybeSingle();
-  if (eErr) return { error: eErr.message, status: 500 };
-  if (!enr) return { error: 'NOT_ENROLLED', status: 403 };
+  const gate = await studentHasCourseAccess(req.user.id, course.id);
+  if (gate.error) return { error: gate.error, status: gate.status ?? 500 };
+  if (!gate.ok) return { error: 'NOT_ENROLLED', status: 403 };
   return { course };
 }
 
 r.get('/courses/:slug', requireAuth, requireRole('student'), async (req, res) => {
   try {
-    const gate = await assertStudentEnrolledInCourse(req, req.params.slug);
+    const gate = await assertStudentCourseLearnAccess(req, req.params.slug);
     if (gate.error) {
       return res.status(gate.status).json({ error: gate.error });
     }
@@ -45,7 +40,7 @@ r.post('/courses/:slug/quizzes/:quizId/submit', requireAuth, requireRole('studen
     return res.status(400).json({ error: 'answers must be an array' });
   }
   try {
-    const gate = await assertStudentEnrolledInCourse(req, req.params.slug);
+    const gate = await assertStudentCourseLearnAccess(req, req.params.slug);
     if (gate.error) {
       return res.status(gate.status).json({ error: gate.error });
     }
@@ -78,7 +73,7 @@ r.put('/courses/:slug/reviews', requireAuth, requireRole('student'), async (req,
     return res.status(400).json({ error: 'rating must be an integer from 1 to 5' });
   }
   try {
-    const gate = await assertStudentEnrolledInCourse(req, req.params.slug);
+    const gate = await assertStudentCourseLearnAccess(req, req.params.slug);
     if (gate.error) {
       return res.status(gate.status).json({ error: gate.error });
     }

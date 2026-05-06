@@ -48,7 +48,7 @@ function fmtDateTime(iso) {
 }
 
 export function ClassDetail() {
-  const { slug } = useParams();
+  const { courseSlug, classSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -80,10 +80,14 @@ export function ClassDetail() {
   const hasRejectedEnrollment = classMembership?.payment_status === 'rejected';
 
   const fetchLearnContent = useCallback(async () => {
-    if (!slug || !session?.access_token || !isStudent) return;
+    if (!courseSlug || !classSlug || !session?.access_token || !isStudent) return;
     setContentLoading(true);
     try {
-      const data = await apiFetch(`/api/class-learn/classes/${encodeURIComponent(slug)}`, {}, session.access_token);
+      const data = await apiFetch(
+        `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}`,
+        {},
+        session.access_token,
+      );
       setLearnPack({
         lectures: data.lectures || [],
         quizzes: data.quizzes || [],
@@ -96,7 +100,7 @@ export function ClassDetail() {
     } finally {
       setContentLoading(false);
     }
-  }, [slug, session?.access_token, isStudent]);
+  }, [courseSlug, classSlug, session?.access_token, isStudent]);
 
   const refreshMyClasses = useCallback(async () => {
     if (!session?.access_token || !isStudent) {
@@ -114,9 +118,17 @@ export function ClassDetail() {
   useEffect(() => {
     let cancelled = false;
     setErr('');
+    if (!courseSlug || !classSlug) {
+      setErr(ERR.NOT_FOUND);
+      return () => {
+        cancelled = true;
+      };
+    }
     (async () => {
       try {
-        const data = await apiFetch(`/api/classes/${encodeURIComponent(slug)}`);
+        const data = await apiFetch(
+          `/api/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}`,
+        );
         if (!cancelled) setKlass(data);
       } catch (e) {
         if (!cancelled) setErr(e.message || ERR.NOT_FOUND);
@@ -125,7 +137,7 @@ export function ClassDetail() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [courseSlug, classSlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,15 +159,15 @@ export function ClassDetail() {
   }, [classId, session?.access_token, session, isStudent]);
 
   useEffect(() => {
-    if (!hasApprovedAccess || !isStudent || !slug || !session?.access_token) return;
+    if (!hasApprovedAccess || !isStudent || !courseSlug || !classSlug || !session?.access_token) return;
     void fetchLearnContent();
-  }, [hasApprovedAccess, isStudent, slug, session?.access_token, fetchLearnContent]);
+  }, [hasApprovedAccess, isStudent, courseSlug, classSlug, session?.access_token, fetchLearnContent]);
 
   useEffect(() => {
     return () => {
       autoEnrollRunning.current = false;
     };
-  }, [slug]);
+  }, [courseSlug, classSlug]);
 
   useEffect(() => {
     if (location.hash === '#lectures-section') setLearnTab(0);
@@ -193,7 +205,8 @@ export function ClassDetail() {
     })();
   }, [searchParams, classId, session, isStudent, myClasses, location.pathname, location.search, navigate]);
 
-  const returnPathForAuth = slug ? `/classes/${slug}?enroll=1` : '/dashboard';
+  const returnPathForAuth =
+    courseSlug && classSlug ? `/courses/${courseSlug}/classes/${classSlug}?enroll=1` : '/dashboard';
 
   function openEnrollFlow() {
     setMsg('');
@@ -273,7 +286,13 @@ export function ClassDetail() {
       <>
         <PageHeader
           title={CLASS_DETAIL.TITLE_FALLBACK}
-          crumbs={[{ label: CLASS_DETAIL.CRUMB, to: '/classes' }, { label: slug || '', active: true }]}
+          crumbs={[
+            { label: COURSE_DETAIL.CRUMB, to: '/courses' },
+            ...(courseSlug
+              ? [{ label: classSlug || '—', to: `/courses/${encodeURIComponent(courseSlug)}` }]
+              : []),
+            { label: classSlug || '', active: true },
+          ]}
         />
         <Box className="container mx-auto max-w-2xl px-4 py-16">
           {!klass && !err ? (
@@ -298,8 +317,14 @@ export function ClassDetail() {
               {err || COMMON.LOADING}
             </Alert>
           )}
-          <Button component={Link} to="/classes" variant="text" color="primary" sx={{ mt: 2, px: 0 }}>
-            {CLASS_DETAIL.BACK}
+          <Button
+            component={Link}
+            to={courseSlug ? `/courses/${encodeURIComponent(courseSlug)}` : '/courses'}
+            variant="text"
+            color="primary"
+            sx={{ mt: 2, px: 0 }}
+          >
+            {courseSlug ? COURSE_DETAIL.BACK : CLASS_DETAIL.BACK}
           </Button>
         </Box>
       </>
@@ -323,7 +348,14 @@ export function ClassDetail() {
     <>
       <PageHeader
         title={klass.name}
-        crumbs={[{ label: CLASS_DETAIL.CRUMB, to: '/classes' }, { label: klass.name, active: true }]}
+        crumbs={[
+          { label: COURSE_DETAIL.CRUMB, to: '/courses' },
+          {
+            label: klass.course?.title || courseSlug || '—',
+            to: `/courses/${encodeURIComponent(courseSlug)}`,
+          },
+          { label: klass.name, active: true },
+        ]}
       />
       <div className="container mx-auto max-w-6xl px-4 py-16">
         <div className="grid gap-10 md:grid-cols-2">
@@ -496,7 +528,7 @@ export function ClassDetail() {
                     {lectures.map((lec, li) => {
                       const blocks = Array.isArray(lec.blocks) ? lec.blocks : [];
                       const nBlocks = blocks.length;
-                      const to = `/classroom/${encodeURIComponent(slug)}/lecture/${encodeURIComponent(lec.id)}`;
+                      const to = `/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/lecture/${encodeURIComponent(lec.id)}`;
                       return (
                         <Paper
                           key={lec.id}
@@ -571,7 +603,7 @@ export function ClassDetail() {
                   <Stack spacing={1.25}>
                     {quizzes.map((quiz, qIdx) => {
                       const nQ = Array.isArray(quiz.questions) ? quiz.questions.length : 0;
-                      const to = `/classroom/${encodeURIComponent(slug)}/quiz/${encodeURIComponent(quiz.id)}`;
+                      const to = `/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/quiz/${encodeURIComponent(quiz.id)}`;
                       return (
                         <Paper
                           key={quiz.id}

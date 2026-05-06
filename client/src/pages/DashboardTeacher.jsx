@@ -733,7 +733,7 @@ export function DashboardTeacher() {
                 >
                   {classes.map((c) => (
                     <MenuItem key={c.id} value={c.slug}>
-                      {c.name}
+                      {c.course?.title ? `${c.name} (${c.course.title})` : c.name}
                     </MenuItem>
                   ))}
                 </Select>

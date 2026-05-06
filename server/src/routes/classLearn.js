@@ -10,14 +10,22 @@ import {
 
 const r = Router();
 
-async function assertStudentInClass(req, slug) {
+async function assertStudentInClass(req, classSlug, courseSlug = null) {
   const { data: klass, error: cErr } = await supabaseAdmin
     .from('classes')
-    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url')
-    .eq('slug', slug)
+    .select(
+      `
+      id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url, course_id,
+      course:courses!classes_course_id_fkey ( id, slug, title )
+    `,
+    )
+    .eq('slug', classSlug)
     .maybeSingle();
   if (cErr) return { error: cErr.message, status: 500 };
   if (!klass) return { error: 'Class not found', status: 404 };
+  if (courseSlug && klass.course?.slug !== courseSlug) {
+    return { error: 'Class not found', status: 404 };
+  }
 
   const { data: row, error: mErr } = await supabaseAdmin
     .from('class_students')
@@ -28,7 +36,8 @@ async function assertStudentInClass(req, slug) {
     .maybeSingle();
   if (mErr) return { error: mErr.message, status: 500 };
   if (!row) return { error: 'NOT_IN_CLASS', status: 403 };
-  return { klass };
+  const { course, ...klassRest } = klass;
+  return { klass: klassRest, course };
 }
 
 r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
@@ -41,7 +50,7 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
         payment_status,
         payment_method,
         payment_note,
-        classes ( id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url )
+        classes ( id, name, slug, description, status, starts_at, ends_at, teacher_id, image_url, course:courses!classes_course_id_fkey ( id, slug, title ) )
       `,
       )
       .eq('student_id', req.user.id)
@@ -81,21 +90,68 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
   }
 });
 
-r.get('/classes/:slug', requireAuth, requireRole('student'), async (req, res) => {
+r.get('/courses/:courseSlug/classes/:classSlug', requireAuth, requireRole('student'), async (req, res) => {
   try {
-    const gate = await assertStudentInClass(req, req.params.slug);
+    const { courseSlug, classSlug } = req.params;
+    const gate = await assertStudentInClass(req, classSlug, courseSlug);
     if (gate.error) return res.status(gate.status).json({ error: gate.error });
-    const { klass } = gate;
+    const { klass, course } = gate;
     const [{ lectures, quizzes }, schedules] = await Promise.all([
       loadClassLecturesAndQuizzes(klass.id, { publishedOnly: true }),
       loadClassSchedules(klass.id),
     ]);
     res.json({
       class: klass,
+      course: course ? { id: course.id, slug: course.slug, title: course.title } : null,
       lectures,
       quizzes,
       schedules,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+r.get('/classes/:slug', requireAuth, requireRole('student'), async (req, res) => {
+  try {
+    const gate = await assertStudentInClass(req, req.params.slug);
+    if (gate.error) return res.status(gate.status).json({ error: gate.error });
+    const { klass, course } = gate;
+    const [{ lectures, quizzes }, schedules] = await Promise.all([
+      loadClassLecturesAndQuizzes(klass.id, { publishedOnly: true }),
+      loadClassSchedules(klass.id),
+    ]);
+    res.json({
+      class: klass,
+      course: course ? { id: course.id, slug: course.slug, title: course.title } : null,
+      lectures,
+      quizzes,
+      schedules,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+r.post('/courses/:courseSlug/classes/:classSlug/quizzes/:quizId/submit', requireAuth, requireRole('student'), async (req, res) => {
+  const answers = req.body?.answers;
+  if (!Array.isArray(answers)) {
+    return res.status(400).json({ error: 'answers must be an array' });
+  }
+  try {
+    const { courseSlug, classSlug, quizId } = req.params;
+    const gate = await assertStudentInClass(req, classSlug, courseSlug);
+    if (gate.error) return res.status(gate.status).json({ error: gate.error });
+    const result = await scoreClassQuizSubmission(quizId, gate.klass.id, answers);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    await insertClassQuizAttempt(req.user.id, quizId, gate.klass.id, {
+      correct: result.correct,
+      total: result.total,
+      percent: result.percent,
+    });
+    res.json({ correct: result.correct, total: result.total, percent: result.percent });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Error' });
   }
@@ -139,7 +195,7 @@ r.get('/quiz-attempts/me', requireAuth, requireRole('student'), async (req, res)
         percent,
         submitted_at,
         class_quizzes ( title ),
-        classes ( name, slug )
+        classes ( name, slug, course:courses!classes_course_id_fkey ( slug ) )
       `,
       )
       .eq('student_id', req.user.id)
@@ -157,6 +213,7 @@ r.get('/quiz-attempts/me', requireAuth, requireRole('student'), async (req, res)
       quiz_title: row.class_quizzes?.title ?? null,
       class_name: row.classes?.name ?? null,
       class_slug: row.classes?.slug ?? null,
+      course_slug: row.classes?.course?.slug ?? null,
     }));
     res.json(attempts);
   } catch (e) {

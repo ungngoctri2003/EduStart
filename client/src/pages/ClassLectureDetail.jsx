@@ -10,7 +10,7 @@ import { useAuth } from '../context/useAuth';
 import { CLASSROOM, COMMON, DASH_STUDENT, LECTURE_DETAIL, PAGE } from '../strings/vi';
 
 export function ClassLectureDetail() {
-  const { slug, lectureId } = useParams();
+  const { courseSlug, classSlug, lectureId } = useParams();
   const { session } = useAuth();
   const [pack, setPack] = useState(null);
   const [err, setErr] = useState('');
@@ -22,7 +22,11 @@ export function ClassLectureDetail() {
     setLoading(true);
     (async () => {
       try {
-        const data = await apiFetch(`/api/class-learn/classes/${encodeURIComponent(slug)}`, {}, session?.access_token);
+        const data = await apiFetch(
+          `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}`,
+          {},
+          session?.access_token,
+        );
         if (!cancelled) setPack(data);
       } catch (e) {
         if (!cancelled) {
@@ -36,7 +40,7 @@ export function ClassLectureDetail() {
     return () => {
       cancelled = true;
     };
-  }, [slug, session?.access_token]);
+  }, [courseSlug, classSlug, session?.access_token]);
 
   const cls = pack?.class;
   const lectures = Array.isArray(pack?.lectures) ? pack.lectures : [];
@@ -133,7 +137,7 @@ export function ClassLectureDetail() {
               {prevLec ? (
                 <Button
                   component={Link}
-                  to={`/classroom/${encodeURIComponent(slug)}/lecture/${encodeURIComponent(prevLec.id)}`}
+                  to={`/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/lecture/${encodeURIComponent(prevLec.id)}`}
                   variant="outlined"
                   startIcon={<ChevronLeft className="h-4 w-4" />}
                 >
@@ -145,7 +149,7 @@ export function ClassLectureDetail() {
               {nextLec ? (
                 <Button
                   component={Link}
-                  to={`/classroom/${encodeURIComponent(slug)}/lecture/${encodeURIComponent(nextLec.id)}`}
+                  to={`/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/lecture/${encodeURIComponent(nextLec.id)}`}
                   variant="outlined"
                   endIcon={<ChevronRight className="h-4 w-4" />}
                 >

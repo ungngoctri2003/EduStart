@@ -1119,7 +1119,7 @@ r.delete('/course-reviews/:id', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// School classes (independent of catalog courses)
+// Classes (linked to catalog courses via course_id)
 // ---------------------------------------------------------------------------
 
 r.get('/classes/metrics', async (_req, res) => {
@@ -1159,7 +1159,8 @@ r.get('/classes', async (req, res) => {
     .select(
       `
       *,
-      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role )
+      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role ),
+      course:courses!classes_course_id_fkey ( id, title, slug )
     `,
       { count: 'exact' },
     )
@@ -1169,12 +1170,34 @@ r.get('/classes', async (req, res) => {
   res.json({ items: data || [], total: count ?? 0, page, pageSize });
 });
 
+r.get('/classes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabaseAdmin
+    .from('classes')
+    .select(
+      `
+      *,
+      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role ),
+      course:courses!classes_course_id_fkey ( id, title, slug )
+    `,
+    )
+    .eq('id', id)
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'Class not found' });
+  res.json(data);
+});
+
 r.post('/classes', async (req, res) => {
   const body = req.body || {};
-  const { name, description, teacher_id, status, starts_at, ends_at, image_url } = body;
+  const { name, description, teacher_id, status, starts_at, ends_at, image_url, course_id } = body;
   const slugRaw = body.slug;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
   if (!teacher_id || typeof teacher_id !== 'string') return res.status(400).json({ error: 'teacher_id required' });
+  if (!course_id || typeof course_id !== 'string') return res.status(400).json({ error: 'course_id required' });
+  const { data: courseRow, error: coErr } = await supabaseAdmin.from('courses').select('id').eq('id', course_id).maybeSingle();
+  if (coErr) return res.status(500).json({ error: coErr.message });
+  if (!courseRow) return res.status(400).json({ error: 'Course not found' });
   const { data: tprof, error: tErr } = await supabaseAdmin
     .from('profiles')
     .select('id, role')
@@ -1198,6 +1221,7 @@ r.post('/classes', async (req, res) => {
       starts_at: starts_at ?? null,
       ends_at: ends_at ?? null,
       price_cents: priceParse.value,
+      course_id,
       image_url:
         image_url === undefined || image_url === null
           ? null
@@ -1209,7 +1233,8 @@ r.post('/classes', async (req, res) => {
     .select(
       `
       *,
-      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role )
+      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role ),
+      course:courses!classes_course_id_fkey ( id, title, slug )
     `,
     )
     .single();
@@ -1220,7 +1245,7 @@ r.post('/classes', async (req, res) => {
 r.patch('/classes/:id', async (req, res) => {
   const { id } = req.params;
   const patch = {};
-  for (const k of ['name', 'description', 'teacher_id', 'status', 'starts_at', 'ends_at', 'image_url']) {
+  for (const k of ['name', 'description', 'teacher_id', 'status', 'starts_at', 'ends_at', 'image_url', 'course_id']) {
     if (req.body[k] !== undefined) patch[k] = req.body[k];
   }
   if (patch.image_url !== undefined) {
@@ -1241,6 +1266,18 @@ r.patch('/classes/:id', async (req, res) => {
     if (!tprof) return res.status(400).json({ error: 'Teacher not found' });
     if (tprof.role !== 'teacher') return res.status(400).json({ error: 'teacher_id must be a teacher profile' });
   }
+  if (patch.course_id !== undefined) {
+    if (!patch.course_id || typeof patch.course_id !== 'string') {
+      return res.status(400).json({ error: 'course_id must be a non-empty string' });
+    }
+    const { data: courseRow, error: coErr } = await supabaseAdmin
+      .from('courses')
+      .select('id')
+      .eq('id', patch.course_id)
+      .maybeSingle();
+    if (coErr) return res.status(500).json({ error: coErr.message });
+    if (!courseRow) return res.status(400).json({ error: 'Course not found' });
+  }
   if (req.body.price_cents !== undefined) {
     const pc = parsePriceCents(req.body.price_cents);
     if (!pc.ok) return res.status(400).json({ error: pc.error });
@@ -1254,7 +1291,8 @@ r.patch('/classes/:id', async (req, res) => {
     .select(
       `
       *,
-      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role )
+      teacher:profiles!classes_teacher_id_fkey ( id, full_name, email, role ),
+      course:courses!classes_course_id_fkey ( id, title, slug )
     `,
     )
     .single();

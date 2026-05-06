@@ -3,11 +3,12 @@
 -- Điều kiện: trong bảng public.profiles cần có ít nhất một user role = teacher và một vài user role = student
 -- (tạo qua Bảng quản trị hoặc Supabase Auth + profiles).
 -- An toàn khi chạy lại: lớp theo slug dùng ON CONFLICT DO NOTHING; nội dung con chỉ thêm khi chưa tồn tại.
+-- course_id trỏ tới public.courses (seed.sql) — đồng bộ thêm cuối file nếu cần.
 
 -- ---------------------------------------------------------------------------
--- Lớp 1: Lập trình Web cơ bản
+-- Lớp 1: Lập trình Web cơ bản → khóa lap-trinh-web-co-ban
 -- ---------------------------------------------------------------------------
-INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url)
+INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url, course_id)
 SELECT
   'Lập trình Web cơ bản',
   'lop-lap-trinh-web-co-ban',
@@ -17,10 +18,13 @@ SELECT
   (now() AT TIME ZONE 'UTC') - interval '7 days',
   (now() AT TIME ZONE 'UTC') + interval '90 days',
   COALESCE(a.id, t.id),
-  '/img/course-1.png'
+  '/img/course-1.png',
+  co.id
 FROM (SELECT id FROM public.profiles WHERE role = 'teacher' ORDER BY created_at ASC LIMIT 1) AS t
 LEFT JOIN LATERAL (SELECT id FROM public.profiles WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1) AS a ON true
-WHERE EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
+CROSS JOIN public.courses co
+WHERE co.slug = 'lap-trinh-web-co-ban'
+  AND EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
 ON CONFLICT (slug) DO NOTHING;
 
 -- Gán tối đa 4 học sinh đầu tiên vào lớp 1
@@ -125,9 +129,9 @@ WHERE c.slug = 'lop-lap-trinh-web-co-ban'
   );
 
 -- ---------------------------------------------------------------------------
--- Lớp 2: Tiếng Anh giao tiếp (lớp thứ hai, cùng giáo viên nếu chỉ có 1 GV)
+-- Lớp 2: Tiếng Anh giao tiếp (khóa tieng-anh-giao-tiep)
 -- ---------------------------------------------------------------------------
-INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url)
+INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url, course_id)
 SELECT
   'Tiếng Anh giao tiếp A2',
   'lop-tieng-anh-giao-tiep-a2',
@@ -137,10 +141,13 @@ SELECT
   (now() AT TIME ZONE 'UTC'),
   (now() AT TIME ZONE 'UTC') + interval '120 days',
   COALESCE(a.id, t.id),
-  '/img/course-2.png'
+  '/img/course-2.png',
+  co.id
 FROM (SELECT id FROM public.profiles WHERE role = 'teacher' ORDER BY created_at ASC LIMIT 1) AS t
 LEFT JOIN LATERAL (SELECT id FROM public.profiles WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1) AS a ON true
-WHERE EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
+CROSS JOIN public.courses co
+WHERE co.slug = 'tieng-anh-giao-tiep'
+  AND EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO public.class_students (class_id, student_id)
@@ -258,9 +265,9 @@ ORDER BY cs.joined_at
 LIMIT 1;
 
 -- ---------------------------------------------------------------------------
--- Lớp 3: Python cho người mới
+-- Lớp 3: Python cho người mới (khóa intro-to-python)
 -- ---------------------------------------------------------------------------
-INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url)
+INSERT INTO public.classes (name, slug, description, teacher_id, status, starts_at, ends_at, created_by, image_url, course_id)
 SELECT
   'Python cho người mới',
   'lop-python-cho-nguoi-moi',
@@ -270,10 +277,13 @@ SELECT
   (now() AT TIME ZONE 'UTC') - interval '3 days',
   (now() AT TIME ZONE 'UTC') + interval '60 days',
   COALESCE(a.id, t.id),
-  '/img/course-3.png'
+  '/img/course-3.png',
+  co.id
 FROM (SELECT id FROM public.profiles WHERE role = 'teacher' ORDER BY created_at ASC LIMIT 1) AS t
 LEFT JOIN LATERAL (SELECT id FROM public.profiles WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1) AS a ON true
-WHERE EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
+CROSS JOIN public.courses co
+WHERE co.slug = 'intro-to-python'
+  AND EXISTS (SELECT 1 FROM public.profiles WHERE role = 'teacher' LIMIT 1)
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO public.class_students (class_id, student_id)
@@ -374,3 +384,19 @@ WHERE c.slug = 'lop-python-cho-nguoi-moi'
     SELECT 1 FROM public.class_schedules s
     WHERE s.class_id = c.id AND s.title = v.title AND s.sort_order = v.sort_order
   );
+
+-- Đồng bộ course_id nếu lớp đã tồn tại trước khi seed có cột course_id.
+UPDATE public.classes cl
+SET course_id = co.id
+FROM public.courses co
+WHERE cl.slug = 'lop-lap-trinh-web-co-ban' AND co.slug = 'lap-trinh-web-co-ban';
+
+UPDATE public.classes cl
+SET course_id = co.id
+FROM public.courses co
+WHERE cl.slug = 'lop-tieng-anh-giao-tiep-a2' AND co.slug = 'tieng-anh-giao-tiep';
+
+UPDATE public.classes cl
+SET course_id = co.id
+FROM public.courses co
+WHERE cl.slug = 'lop-python-cho-nguoi-moi' AND co.slug = 'intro-to-python';

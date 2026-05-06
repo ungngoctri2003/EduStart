@@ -23,7 +23,7 @@ import { useAuth } from '../context/useAuth';
 import { CLASSROOM, COMMON, COURSE_DETAIL, DASH_STUDENT, PAGE, QUIZ_DETAIL } from '../strings/vi';
 
 export function ClassQuizDetail() {
-  const { slug, quizId } = useParams();
+  const { courseSlug, classSlug, quizId } = useParams();
   const { session } = useAuth();
   const [pack, setPack] = useState(null);
   const [err, setErr] = useState('');
@@ -38,7 +38,11 @@ export function ClassQuizDetail() {
     setLoading(true);
     (async () => {
       try {
-        const data = await apiFetch(`/api/class-learn/classes/${encodeURIComponent(slug)}`, {}, session?.access_token);
+        const data = await apiFetch(
+          `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}`,
+          {},
+          session?.access_token,
+        );
         if (!cancelled) setPack(data);
       } catch (e) {
         if (!cancelled) {
@@ -52,7 +56,7 @@ export function ClassQuizDetail() {
     return () => {
       cancelled = true;
     };
-  }, [slug, session?.access_token]);
+  }, [courseSlug, classSlug, session?.access_token]);
 
   const cls = pack?.class;
   const quizzes = Array.isArray(pack?.quizzes) ? pack.quizzes : [];
@@ -77,13 +81,13 @@ export function ClassQuizDetail() {
   }
 
   async function submitQuiz() {
-    if (!slug || !quiz || !session?.access_token) return;
+    if (!courseSlug || !classSlug || !quiz || !session?.access_token) return;
     const raw = answers;
     const arr = Array.from({ length: nQ }, (_, i) => (typeof raw[i] === 'number' ? raw[i] : -1));
     setSubmitting(true);
     try {
       const res = await apiFetch(
-        `/api/class-learn/classes/${encodeURIComponent(slug)}/quizzes/${encodeURIComponent(quiz.id)}/submit`,
+        `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}/quizzes/${encodeURIComponent(quiz.id)}/submit`,
         { method: 'POST', body: JSON.stringify({ answers: arr }) },
         session.access_token,
       );
@@ -222,7 +226,7 @@ export function ClassQuizDetail() {
               {prevQ ? (
                 <Button
                   component={Link}
-                  to={`/classroom/${encodeURIComponent(slug)}/quiz/${encodeURIComponent(prevQ.id)}`}
+                  to={`/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/quiz/${encodeURIComponent(prevQ.id)}`}
                   variant="outlined"
                   startIcon={<ChevronLeft className="h-4 w-4" />}
                 >
@@ -234,7 +238,7 @@ export function ClassQuizDetail() {
               {nextQ ? (
                 <Button
                   component={Link}
-                  to={`/classroom/${encodeURIComponent(slug)}/quiz/${encodeURIComponent(nextQ.id)}`}
+                  to={`/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(classSlug)}/quiz/${encodeURIComponent(nextQ.id)}`}
                   variant="outlined"
                   endIcon={<ChevronRight className="h-4 w-4" />}
                 >

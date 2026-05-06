@@ -8,6 +8,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const profileRequestId = useRef(0);
+  /** Canonical user id for the active session — updated synchronously on auth/session changes */
+  const sessionUserIdRef = useRef(null);
 
   const loadProfile = useCallback(async (userId) => {
     const reqId = ++profileRequestId.current;
@@ -26,7 +28,9 @@ export function AuthProvider({ children }) {
           setTimeout(() => resolve({ data: null, error: { message: 'Profile load timeout' } }), PROFILE_MS),
         ),
       ]);
-      if (profileRequestId.current !== reqId) {
+      const reqStale = profileRequestId.current !== reqId;
+      const userStale = sessionUserIdRef.current !== userId;
+      if (reqStale || userStale) {
         return error ? null : data;
       }
       if (error) {
@@ -46,45 +50,24 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
 
-    const init = async () => {
-      setLoading(true);
-      const GET_SESSION_MS = 12000;
-      try {
-        let s = null;
-        try {
-          const { data } = await Promise.race([
-            supabase.auth.getSession(),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('getSession timeout')), GET_SESSION_MS),
-            ),
-          ]);
-          s = data?.session ?? null;
-        } catch (e) {
-          console.warn('Auth init:', e);
-        }
-        if (cancelled) return;
-        setSession(s);
-        await loadProfile(s?.user?.id);
-      } catch (e) {
-        console.warn('Auth init:', e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void init();
-
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, s) => {
+    } = supabase.auth.onAuthStateChange((_event, s) => {
+      const uid = s?.user?.id ?? null;
+      sessionUserIdRef.current = uid;
       setSession(s);
-      if (s?.user?.id) {
-        await loadProfile(s.user.id);
-      } else {
-        profileRequestId.current += 1;
-        setProfile(null);
-        setProfileLoading(false);
-      }
+      setLoading(false);
+
+      queueMicrotask(() => {
+        if (cancelled) return;
+        if (uid) {
+          void loadProfile(uid);
+        } else {
+          profileRequestId.current += 1;
+          setProfile(null);
+          setProfileLoading(false);
+        }
+      });
     });
 
     return () => {
@@ -104,8 +87,11 @@ export function AuthProvider({ children }) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         // Apply session immediately so navigate() after login sees a session (onAuthStateChange can lag one tick).
-        setSession(data.session ?? null);
-        const profileRow = await loadProfile(data.user?.id ?? null);
+        const nextSession = data.session ?? null;
+        const nextUid = data.user?.id ?? null;
+        setSession(nextSession);
+        sessionUserIdRef.current = nextUid;
+        const profileRow = await loadProfile(nextUid);
         return { data, profile: profileRow };
       },
       async signUp(email, password, fullName) {
@@ -117,13 +103,16 @@ export function AuthProvider({ children }) {
         if (error) throw error;
         let profileRow = null;
         if (data.session) {
+          const nextUid = data.user?.id ?? null;
           setSession(data.session);
-          profileRow = await loadProfile(data.user?.id ?? null);
+          sessionUserIdRef.current = nextUid;
+          profileRow = await loadProfile(nextUid);
         }
         return { data, profile: profileRow };
       },
       async signOut() {
         profileRequestId.current += 1;
+        sessionUserIdRef.current = null;
         await supabase.auth.signOut();
         setSession(null);
         setProfile(null);

@@ -309,6 +309,7 @@ export function DashboardStudent() {
       _kind: 'classroom',
       _label: a.class_name,
       _slug: a.class_slug,
+      _courseSlug: a.course_slug,
     }));
     return [...klass, ...course].sort((x, y) => {
       const tx = x.submitted_at ? new Date(x.submitted_at).getTime() : 0;
@@ -422,15 +423,17 @@ export function DashboardStudent() {
                   </Typography>
                 </TableCell>
                 <TableCell sx={{ py: 1.25 }}>
-                  {a._kind === 'classroom' && a._slug && a.quiz_id ? (
+                  {a._kind === 'classroom' && a._slug && a.quiz_id && a._courseSlug ? (
                     <MuiLink
                       component={Link}
-                      to={`/classroom/${encodeURIComponent(a._slug)}/quiz/${encodeURIComponent(a.quiz_id)}`}
+                      to={`/courses/${encodeURIComponent(a._courseSlug)}/classroom/${encodeURIComponent(a._slug)}/quiz/${encodeURIComponent(a.quiz_id)}`}
                       fontWeight={600}
                       variant="body2"
                     >
                       {a.quiz_title || '—'}
                     </MuiLink>
+                  ) : a._kind === 'classroom' && a._slug && a.quiz_id ? (
+                    <Typography variant="body2">{a.quiz_title || '—'}</Typography>
                   ) : a._kind === 'course' && a._slug && a.quiz_id ? (
                     <MuiLink component={Link} to={`/courses/${a._slug}/quiz/${encodeURIComponent(a.quiz_id)}`} fontWeight={600} variant="body2">
                       {a.quiz_title || '—'}
@@ -639,7 +642,7 @@ export function DashboardStudent() {
               <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mt: 1 }}>
                 {DASH_STUDENT.CTA_BROWSE_CLASSES_HINT}
               </Typography>
-              <Button component={Link} to="/classes" variant="outlined" color="primary" sx={{ mt: 2 }}>
+              <Button component={Link} to="/courses" variant="outlined" color="primary" sx={{ mt: 2 }}>
                 {DASH_STUDENT.CTA_BROWSE_CLASSES}
               </Button>
             </Paper>
@@ -647,7 +650,8 @@ export function DashboardStudent() {
             <Stack spacing={2}>
               {classMemberships.map((m) => {
                 const c = m.class;
-                if (!c?.slug) return null;
+                const courseSlug = c.course?.slug;
+                if (!c?.slug || !courseSlug) return null;
                 const nLec = m.counts?.lectures ?? 0;
                 const nQz = m.counts?.quizzes ?? 0;
                 return (
@@ -683,14 +687,14 @@ export function DashboardStudent() {
                             void (async () => {
                               try {
                                 const pack = await apiFetch(
-                                  `/api/class-learn/classes/${encodeURIComponent(c.slug)}`,
+                                  `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(c.slug)}`,
                                   {},
                                   session?.access_token,
                                 );
                                 const first = pack?.lectures?.[0];
                                 if (first?.id) {
                                   window.location.assign(
-                                    `/classroom/${encodeURIComponent(c.slug)}/lecture/${encodeURIComponent(first.id)}`,
+                                    `/courses/${encodeURIComponent(courseSlug)}/classroom/${encodeURIComponent(c.slug)}/lecture/${encodeURIComponent(first.id)}`,
                                   );
                                 } else {
                                   toast.error(DASH_STUDENT.EMPTY_LECTURES);

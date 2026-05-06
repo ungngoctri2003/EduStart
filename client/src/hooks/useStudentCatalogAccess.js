@@ -3,7 +3,8 @@ import { useAuth } from '../context/useAuth';
 import { apiFetch } from '../lib/api';
 
 /**
- * For catalog pages: map course id / class id → payment_status for the current user (students only).
+ * Catalog: course id / class id → payment_status for the current student.
+ * Course map merges direct enrollments and class memberships on the same course_id (pending wins, then approved).
  * @returns {{ coursePaymentById: Map<string, string>, classPaymentById: Map<string, string> }}
  */
 export function useStudentCatalogAccess() {
@@ -13,8 +14,10 @@ export function useStudentCatalogAccess() {
 
   useEffect(() => {
     if (!session?.access_token || profile?.role !== 'student') {
-      setCoursePaymentById(new Map());
-      setClassPaymentById(new Map());
+      queueMicrotask(() => {
+        setCoursePaymentById(new Map());
+        setClassPaymentById(new Map());
+      });
       return;
     }
     let cancelled = false;
@@ -24,11 +27,25 @@ export function useStudentCatalogAccess() {
           apiFetch('/api/enrollments/me', {}, session.access_token),
           apiFetch('/api/class-learn/me', {}, session.access_token),
         ]);
-        const cMap = new Map();
+        const byCourse = new Map();
+        const add = (courseId, status) => {
+          if (!courseId) return;
+          const list = byCourse.get(courseId) || [];
+          list.push(status ?? 'approved');
+          byCourse.set(courseId, list);
+        };
         for (const row of enr || []) {
-          const id = row.course_id || row.courses?.id;
-          if (!id) continue;
-          cMap.set(id, row.payment_status ?? 'approved');
+          add(row.course_id || row.courses?.id, row.payment_status);
+        }
+        for (const row of cls || []) {
+          add(row.class?.course?.id, row.payment_status);
+        }
+        const cMap = new Map();
+        for (const [cid, arr] of byCourse) {
+          if (arr.some((s) => s === 'pending')) cMap.set(cid, 'pending');
+          else if (arr.some((s) => s === 'approved' || s == null)) cMap.set(cid, 'approved');
+          else if (arr.some((s) => s === 'rejected')) cMap.set(cid, 'rejected');
+          else cMap.set(cid, 'approved');
         }
         const kMap = new Map();
         for (const row of cls || []) {

@@ -62,7 +62,7 @@ const slides = [
     title: HOME.SLIDE2_TITLE,
     text: HOME.SLIDE2_TEXT,
     primary: { to: '/courses', label: HOME.BROWSE_COURSES },
-    secondary: { to: '/classes', label: HOME.BROWSE_CLASSES },
+    secondary: { to: '/courses', label: HOME.BROWSE_CLASSES },
   },
 ];
 
@@ -130,19 +130,30 @@ export function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const results = await Promise.allSettled([
-        apiFetch('/api/courses'),
-        apiFetch('/api/categories'),
-        apiFetch('/api/classes'),
-      ]);
+      const results = await Promise.allSettled([apiFetch('/api/courses'), apiFetch('/api/categories')]);
       if (cancelled) return;
-      const [cRes, catRes, clsRes] = results;
+      const [cRes, catRes] = results;
       const courses = cRes.status === 'fulfilled' && Array.isArray(cRes.value) ? cRes.value : [];
       const categories = catRes.status === 'fulfilled' && Array.isArray(catRes.value) ? catRes.value : [];
-      const classes = clsRes.status === 'fulfilled' && Array.isArray(clsRes.value) ? clsRes.value : [];
+      const classRows = [];
+      for (const c of courses.slice(0, FEATURED_HOME_CLASS_COUNT + 2)) {
+        if (!c?.slug) continue;
+        try {
+          const list = await apiFetch(`/api/courses/${encodeURIComponent(c.slug)}/classes`);
+          if (Array.isArray(list)) {
+            for (const row of list) {
+              classRows.push(row);
+              if (classRows.length >= FEATURED_HOME_CLASS_COUNT) break;
+            }
+          }
+        } catch {
+          /* skip course */
+        }
+        if (classRows.length >= FEATURED_HOME_CLASS_COUNT) break;
+      }
       setFeaturedCourses(courses.slice(0, FEATURED_COURSE_COUNT));
       setCategoriesPreview(categories.slice(0, 8));
-      setFeaturedClasses(classes.slice(0, FEATURED_HOME_CLASS_COUNT));
+      setFeaturedClasses(classRows.slice(0, FEATURED_HOME_CLASS_COUNT));
       const catOrCourseRejected = [cRes, catRes].find((r) => r.status === 'rejected');
       if (catOrCourseRejected) {
         const reason = catOrCourseRejected.reason;
@@ -638,7 +649,11 @@ export function Home() {
         >
           {featuredClasses.map((klass) => (
             <motion.div key={klass.id} variants={sItem} className="min-h-0">
-              <ClassCatalogCard klass={klass} paymentStatus={classPaymentById.get(klass.id) ?? null} />
+              <ClassCatalogCard
+                klass={klass}
+                courseSlug={klass.course_slug}
+                paymentStatus={classPaymentById.get(klass.id) ?? null}
+              />
             </motion.div>
           ))}
         </motion.div>
@@ -652,7 +667,7 @@ export function Home() {
           viewport={inView}
           variants={sec}
         >
-          <Button component={Link} to="/classes" variant="outlined" color="primary" size="large" sx={{ minWidth: 200 }}>
+          <Button component={Link} to="/courses" variant="outlined" color="primary" size="large" sx={{ minWidth: 200 }}>
             {HOME.VIEW_ALL_CLASSES}
           </Button>
         </motion.div>

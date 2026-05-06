@@ -6,12 +6,17 @@ import { formatVndFromPriceCentsOrFree } from '../utils/money.js';
 
 /**
  * @param {{ course: object, paymentStatus?: string | null }} props
- * `paymentStatus`: `approved` | `pending` | `rejected` from enrollments (student catalog only).
+ * `paymentStatus`: merged from course enrollments and class memberships (`approved` | `pending` | `rejected`).
  */
 export function CourseCatalogCard({ course, paymentStatus = null }) {
   const categoryName = course.categories?.name;
   const showApproved = paymentStatus === 'approved';
   const showPending = paymentStatus === 'pending';
+  const activeClassCount = Number(course.active_classes_count) || 0;
+  const priceChipLabel =
+    activeClassCount > 0
+      ? COURSES_PAGE.CATALOG_PRICE_VIA_CLASS
+      : formatVndFromPriceCentsOrFree(course.price_cents, COMMON.FREE);
 
   return (
     <Card
@@ -194,7 +199,7 @@ export function CourseCatalogCard({ course, paymentStatus = null }) {
             <Chip
               size="small"
               variant="outlined"
-              label={formatVndFromPriceCentsOrFree(course.price_cents, COMMON.FREE)}
+              label={priceChipLabel}
               sx={{ borderColor: 'divider', fontWeight: 700 }}
             />
           </Stack>

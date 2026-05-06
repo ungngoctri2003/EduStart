@@ -199,7 +199,9 @@ r.get('/dashboard-stats', async (req, res) => {
 r.get('/classes', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('classes')
-    .select('id, name, slug, description, status, starts_at, ends_at, teacher_id, created_at, image_url')
+    .select(
+      'id, name, slug, description, status, starts_at, ends_at, teacher_id, created_at, image_url, course:courses!classes_course_id_fkey ( id, slug, title )',
+    )
     .eq('teacher_id', req.user.id)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });

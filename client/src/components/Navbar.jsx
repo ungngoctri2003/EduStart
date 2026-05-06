@@ -118,9 +118,6 @@ export function Navbar() {
       <Button component={NavLink} to="/courses" sx={navButtonSx} onClick={closeMobile}>
         {NAV.COURSES}
       </Button>
-      <Button component={NavLink} to="/classes" sx={navButtonSx} onClick={closeMobile}>
-        {NAV.CLASSES}
-      </Button>
       <Button component={NavLink} to="/team" sx={navButtonSx} onClick={closeMobile}>
         {NAV.TEAM}
       </Button>
@@ -188,11 +185,11 @@ export function Navbar() {
             onClick={closeMobile}
             sx={{
               textTransform: 'none',
-              gap: { xs: 1.25, md: 1.5 },
+              gap: { xs: 1, md: 1.25 },
               fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif",
               fontWeight: 800,
               fontSize: { xs: '1.35rem', md: '1.75rem' },
-              letterSpacing: '-0.02em',
+              letterSpacing: '-0.04em',
               color: 'text.primary',
               borderRadius: 2,
               transition: `opacity 0.25s ${navEase}, transform 0.28s ${navEase}`,
@@ -222,17 +219,18 @@ export function Navbar() {
                 e.target.style.display = 'none';
               }}
             />
-            Edu
-            <Box
-              component="span"
-              sx={{
-                background: (t) => `linear-gradient(135deg, ${t.palette.primary.main}, ${t.palette.secondary.main})`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              Start
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+              <Box component="span">Edu</Box><Box
+                component="span"
+                sx={{
+                  background: (t) => `linear-gradient(135deg, ${t.palette.primary.main}, ${t.palette.secondary.main})`,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Start
+              </Box>
             </Box>
           </Button>
         </Box>
