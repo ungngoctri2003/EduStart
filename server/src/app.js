@@ -13,6 +13,7 @@ import classEnrollmentsRoutes from './routes/classEnrollments.js';
 import certificatesRoutes from './routes/certificates.js';
 import classRefundsRoutes from './routes/classRefunds.js';
 import meRoutes from './routes/me.js';
+import courseForumRoutes from './routes/courseForum.js';
 
 function resolveClientOrigin() {
   if (process.env.CLIENT_ORIGIN) return process.env.CLIENT_ORIGIN;
@@ -48,6 +49,7 @@ app.use('/api/class-learn', classLearnRoutes);
 app.use('/api/class-enrollments', classEnrollmentsRoutes);
 app.use('/api/class-refunds', classRefundsRoutes);
 app.use('/api/certificates', certificatesRoutes);
+app.use('/api/course-forum', courseForumRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
