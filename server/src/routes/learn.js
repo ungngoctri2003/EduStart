@@ -28,7 +28,49 @@ r.get('/courses/:slug', requireAuth, requireRole('student'), async (req, res) =>
       return res.status(gate.status).json({ error: gate.error });
     }
     const { lectures, quizzes } = await loadCourseLecturesAndQuizzes(gate.course.id);
-    res.json({ lectures, quizzes });
+    const lectureIds = (lectures || []).map((l) => l.id).filter(Boolean);
+    let completedLectureIds = [];
+    if (lectureIds.length > 0) {
+      const { data: prog, error: pErr } = await supabaseAdmin
+        .from('course_lecture_progress')
+        .select('course_lecture_id')
+        .eq('student_id', req.user.id)
+        .in('course_lecture_id', lectureIds);
+      if (pErr) return res.status(500).json({ error: pErr.message });
+      completedLectureIds = (prog || []).map((r) => r.course_lecture_id);
+    }
+    res.json({ lectures, quizzes, completed_lecture_ids: completedLectureIds });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Internal error' });
+  }
+});
+
+r.post('/courses/:slug/lectures/:lectureId/complete', requireAuth, requireRole('student'), async (req, res) => {
+  try {
+    const gate = await assertStudentCourseLearnAccess(req, req.params.slug);
+    if (gate.error) {
+      return res.status(gate.status).json({ error: gate.error });
+    }
+    const { lectureId } = req.params;
+    const { data: lec, error: lErr } = await supabaseAdmin
+      .from('course_lectures')
+      .select('id, course_id')
+      .eq('id', lectureId)
+      .maybeSingle();
+    if (lErr) return res.status(500).json({ error: lErr.message });
+    if (!lec || lec.course_id !== gate.course.id) {
+      return res.status(404).json({ error: 'Lecture not found' });
+    }
+    const { error: uErr } = await supabaseAdmin.from('course_lecture_progress').upsert(
+      {
+        student_id: req.user.id,
+        course_lecture_id: lec.id,
+        completed_at: new Date().toISOString(),
+      },
+      { onConflict: 'student_id,course_lecture_id' },
+    );
+    if (uErr) return res.status(500).json({ error: uErr.message });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Internal error' });
   }

@@ -5,6 +5,7 @@ import { alpha } from '@mui/material/styles';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { LectureContentBlocks } from '../components/LectureContentBlocks';
 import { PageHeader } from '../components/PageHeader';
+import { toast } from 'sonner';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/useAuth';
 import { CLASSROOM, COMMON, DASH_STUDENT, LECTURE_DETAIL, PAGE } from '../strings/vi';
@@ -15,6 +16,7 @@ export function ClassLectureDetail() {
   const [pack, setPack] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const [markSaving, setMarkSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +48,8 @@ export function ClassLectureDetail() {
   const lectures = Array.isArray(pack?.lectures) ? pack.lectures : [];
   const lecture = lectures.find((l) => String(l.id) === String(lectureId));
   const idx = lectures.findIndex((l) => String(l.id) === String(lectureId));
+  const completedLectureIds = new Set(Array.isArray(pack?.completed_lecture_ids) ? pack.completed_lecture_ids : []);
+  const lectureCompleted = Boolean(lecture && completedLectureIds.has(lecture.id));
   const prevLec = idx > 0 ? lectures[idx - 1] : null;
   const nextLec = idx >= 0 && idx < lectures.length - 1 ? lectures[idx + 1] : null;
   const backHref = '/dashboard/student#my-classes';
@@ -133,6 +137,41 @@ export function ClassLectureDetail() {
             </Paper>
             <Divider sx={{ mb: 3 }} />
             <LectureContentBlocks blocks={lecture.blocks} lectureTitle={lecture.title} />
+            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ mt: 3 }}>
+              {lectureCompleted ? (
+                <Chip label={LECTURE_DETAIL.LECTURE_COMPLETED} color="success" variant="outlined" sx={{ fontWeight: 700 }} />
+              ) : (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={markSaving || !session?.access_token}
+                  onClick={() => {
+                    void (async () => {
+                      setMarkSaving(true);
+                      try {
+                        await apiFetch(
+                          `/api/class-learn/courses/${encodeURIComponent(courseSlug)}/classes/${encodeURIComponent(classSlug)}/lectures/${encodeURIComponent(lecture.id)}/complete`,
+                          { method: 'POST', body: JSON.stringify({}) },
+                          session.access_token,
+                        );
+                        setPack((prev) => {
+                          if (!prev) return prev;
+                          const raw = prev.completed_lecture_ids || [];
+                          const next = [...raw.filter((id) => id !== lecture.id), lecture.id];
+                          return { ...prev, completed_lecture_ids: next };
+                        });
+                      } catch (e) {
+                        toast.error(e.message || LECTURE_DETAIL.COMPLETE_ERROR);
+                      } finally {
+                        setMarkSaving(false);
+                      }
+                    })();
+                  }}
+                >
+                  {markSaving ? COMMON.LOADING : LECTURE_DETAIL.MARK_COMPLETE}
+                </Button>
+              )}
+            </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ mt: 4 }}>
               {prevLec ? (
                 <Button

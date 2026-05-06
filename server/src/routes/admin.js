@@ -490,7 +490,7 @@ function enrollmentStatsFromRows(list) {
 
 /** Dữ liệu theo dòng thanh toán: trạng thái, phương thức, timeline 30 ngày (UTC) */
 function paymentQueueStatsFromRows(list, dateKey) {
-  const byStatus = { pending: 0, approved: 0, rejected: 0 };
+  const byStatus = { pending: 0, approved: 0, rejected: 0, refunded: 0 };
   const byMethod = { cash: 0, bank_transfer: 0, momo: 0, vnpay: 0, unset: 0 };
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -502,7 +502,7 @@ function paymentQueueStatsFromRows(list, dateKey) {
   }
   for (const row of list) {
     const s = row.payment_status;
-    if (s === 'pending' || s === 'approved' || s === 'rejected') {
+    if (s === 'pending' || s === 'approved' || s === 'rejected' || s === 'refunded') {
       byStatus[s] = (byStatus[s] || 0) + 1;
     }
     const pm = row.payment_method;
@@ -520,6 +520,7 @@ function paymentQueueStatsFromRows(list, dateKey) {
     { status: 'pending', count: byStatus.pending },
     { status: 'approved', count: byStatus.approved },
     { status: 'rejected', count: byStatus.rejected },
+    { status: 'refunded', count: byStatus.refunded },
   ];
   const byMethodList = [
     { method: 'cash', count: byMethod.cash },
@@ -529,7 +530,7 @@ function paymentQueueStatsFromRows(list, dateKey) {
     { method: 'unset', count: byMethod.unset },
   ];
   const byDay = [...byDayMap.entries()].map(([d, c]) => ({ day: d, count: c }));
-  const total = byStatus.pending + byStatus.approved + byStatus.rejected;
+  const total = byStatus.pending + byStatus.approved + byStatus.rejected + byStatus.refunded;
   return { total, byStatus: byStatusList, byMethod: byMethodList, byDay };
 }
 
@@ -615,8 +616,14 @@ r.get('/payments/classes', async (req, res) => {
     statusRaw === undefined || statusRaw === null || statusRaw === ''
       ? 'pending'
       : String(statusRaw);
-  if (status !== 'all' && status !== 'pending' && status !== 'approved' && status !== 'rejected') {
-    return res.status(400).json({ error: 'status must be pending, approved, rejected, or all' });
+  if (
+    status !== 'all' &&
+    status !== 'pending' &&
+    status !== 'approved' &&
+    status !== 'rejected' &&
+    status !== 'refunded'
+  ) {
+    return res.status(400).json({ error: 'status must be pending, approved, rejected, refunded, or all' });
   }
   const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 200 });
   let q = supabaseAdmin
@@ -696,6 +703,116 @@ r.patch('/payments/classes/:classStudentId', async (req, res) => {
     .single();
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+});
+
+r.get('/class-refund-requests', async (req, res) => {
+  const statusRaw = req.query.status;
+  const status =
+    statusRaw === undefined || statusRaw === null || statusRaw === '' ? 'pending' : String(statusRaw);
+  if (status !== 'all' && status !== 'pending' && status !== 'approved' && status !== 'rejected') {
+    return res.status(400).json({ error: 'status must be pending, approved, rejected, or all' });
+  }
+  const { page, pageSize, from, to } = parsePaginationQuery(req, { defaultPageSize: 20, maxPageSize: 100 });
+  let q = supabaseAdmin
+    .from('class_refund_requests')
+    .select(
+      `
+      id,
+      status,
+      reason,
+      admin_note,
+      created_at,
+      reviewed_at,
+      reviewed_by,
+      class_student_id,
+      student_id,
+      class_id,
+      student:profiles!class_refund_requests_student_id_fkey ( id, full_name, email ),
+      membership:class_students!class_refund_requests_class_student_id_fkey (
+        id, payment_method, payment_note, joined_at, payment_status
+      ),
+      klass:classes!class_refund_requests_class_id_fkey (
+        id, name, slug, price_cents,
+        course:courses!classes_course_id_fkey ( title, slug )
+      )
+    `,
+      { count: 'exact' },
+    )
+    .order('created_at', { ascending: false });
+  if (status !== 'all') q = q.eq('status', status);
+  const { data: rows, error, count } = await q.range(from, to);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ items: rows || [], total: count ?? 0, page, pageSize });
+});
+
+r.patch('/class-refund-requests/:id', async (req, res) => {
+  const { id } = req.params;
+  const nextStatus = req.body?.status;
+  const admin_note =
+    typeof req.body?.admin_note === 'string' ? (req.body.admin_note.trim() || null) : null;
+  if (nextStatus !== 'approved' && nextStatus !== 'rejected') {
+    return res.status(400).json({ error: 'status must be approved or rejected' });
+  }
+
+  const { data: reqRow, error: fErr } = await supabaseAdmin
+    .from('class_refund_requests')
+    .select('id, status, class_student_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (fErr) return res.status(500).json({ error: fErr.message });
+  if (!reqRow) return res.status(404).json({ error: 'Refund request not found' });
+  if (reqRow.status !== 'pending') {
+    return res.status(409).json({ error: 'REFUND_ALREADY_REVIEWED' });
+  }
+
+  const now = new Date().toISOString();
+
+  if (nextStatus === 'rejected') {
+    const { data: updated, error: uErr } = await supabaseAdmin
+      .from('class_refund_requests')
+      .update({
+        status: 'rejected',
+        admin_note,
+        reviewed_at: now,
+        reviewed_by: req.user.id,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (uErr) return res.status(500).json({ error: uErr.message });
+    return res.json(updated);
+  }
+
+  const { data: memUpdated, error: muErr } = await supabaseAdmin
+    .from('class_students')
+    .update({
+      payment_status: 'refunded',
+      reviewed_at: now,
+      reviewed_by: req.user.id,
+    })
+    .eq('id', reqRow.class_student_id)
+    .eq('payment_status', 'approved')
+    .select('id')
+    .maybeSingle();
+
+  if (muErr) return res.status(500).json({ error: muErr.message });
+  if (!memUpdated) {
+    return res.status(409).json({ error: 'MEMBERSHIP_NOT_APPROVED_OR_ALREADY_REFUNDED' });
+  }
+
+  const { data: reqUp, error: ruErr } = await supabaseAdmin
+    .from('class_refund_requests')
+    .update({
+      status: 'approved',
+      admin_note,
+      reviewed_at: now,
+      reviewed_by: req.user.id,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  if (ruErr) return res.status(500).json({ error: ruErr.message });
+  res.json(reqUp);
 });
 
 const QUIZ_ATTEMPT_SELECT = `

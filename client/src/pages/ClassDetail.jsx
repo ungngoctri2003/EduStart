@@ -22,12 +22,13 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { Calendar, CalendarDays, ChevronRight, ClipboardList, GraduationCap, ListVideo, Users } from 'lucide-react';
+import { Calendar, CalendarDays, ChevronRight, ClipboardList, GraduationCap, ListVideo, Users, Award } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageHeader } from '../components/PageHeader';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/useAuth';
 import { ImageReveal, ScrollSection } from '../motion/ScrollBlock';
-import { CLASS_DETAIL, COURSE_DETAIL, PAYMENT, COMMON, ERR } from '../strings/vi';
+import { CLASS_DETAIL, COURSE_DETAIL, PAYMENT, COMMON, ERR, DASH_STUDENT } from '../strings/vi';
 import { classCoverUrl } from '../lib/classCoverUrl';
 import { formatVndFromPriceCentsOrFree } from '../utils/money.js';
 
@@ -45,6 +46,13 @@ function fmtDateTime(iso) {
   } catch {
     return '—';
   }
+}
+
+function mapClassRefundSubmitError(code) {
+  if (code === 'REASON_TOO_SHORT') return DASH_STUDENT.REFUND_ERR_SHORT;
+  if (code === 'REASON_TOO_LONG') return DASH_STUDENT.REFUND_ERR_LONG;
+  if (code === 'REFUND_REQUEST_PENDING') return DASH_STUDENT.REFUND_ERR_PENDING;
+  return null;
 }
 
 export function ClassDetail() {
@@ -67,6 +75,9 @@ export function ClassDetail() {
   const [paymentChoiceOpen, setPaymentChoiceOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
   const [paymentNote, setPaymentNote] = useState('');
+  const [refundDlgOpen, setRefundDlgOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
   const reduce = useReducedMotion() ?? false;
 
   const isStudent = profile?.role === 'student';
@@ -78,6 +89,10 @@ export function ClassDetail() {
     (classMembership.payment_status === 'approved' || classMembership.payment_status == null);
   const hasPendingEnrollment = classMembership?.payment_status === 'pending';
   const hasRejectedEnrollment = classMembership?.payment_status === 'rejected';
+  const membershipPaid = classMembership?.payment_status === 'approved';
+  const membershipRefunded = classMembership?.payment_status === 'refunded';
+  const membershipRefundPending = classMembership?.refund_request?.status === 'pending';
+  const showRefundBtn = isStudent && membershipPaid && !membershipRefunded && !membershipRefundPending;
 
   const fetchLearnContent = useCallback(async () => {
     if (!courseSlug || !classSlug || !session?.access_token || !isStudent) return;
@@ -281,6 +296,33 @@ export function ClassDetail() {
     }
   }
 
+  async function submitClassRefund() {
+    if (!session?.access_token || !classMembership?.membership_id) return;
+    setRefundSubmitting(true);
+    try {
+      await apiFetch(
+        '/api/class-refunds',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            class_student_id: classMembership.membership_id,
+            reason: refundReason,
+          }),
+        },
+        session.access_token,
+      );
+      toast.success(DASH_STUDENT.REFUND_SENT);
+      setRefundDlgOpen(false);
+      setRefundReason('');
+      await refreshMyClasses();
+    } catch (e) {
+      const mapped = mapClassRefundSubmitError(e.data?.error);
+      toast.error(mapped || e.message || DASH_STUDENT.REFUND_ERR_GENERIC);
+    } finally {
+      setRefundSubmitting(false);
+    }
+  }
+
   if (err || !klass) {
     return (
       <>
@@ -408,6 +450,18 @@ export function ClassDetail() {
                 label={`${CLASS_DETAIL.STUDENTS}: ${klass.student_count != null ? String(klass.student_count) : '—'}`}
                 variant="outlined"
               />
+              {isStudent && hasApprovedAccess && classMembership?.certificate_eligible ? (
+                <>
+                  <Chip size="small" color="success" label={CLASS_DETAIL.BADGE_CLASS_COMPLETED} sx={{ fontWeight: 700 }} />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    icon={<Award className="h-3.5 w-3.5" aria-hidden />}
+                    label={CLASS_DETAIL.BADGE_CLASS_CERTIFICATE}
+                  />
+                </>
+              ) : null}
             </Stack>
             {msg ? (
               <Alert severity={enrollOk ? 'success' : enrollPendingInfo ? 'info' : 'warning'} sx={{ mt: 2 }}>
@@ -433,6 +487,19 @@ export function ClassDetail() {
               {isStudent && hasApprovedAccess ? (
                 <Button type="button" variant="text" color="primary" href="#class-learn" sx={{ alignSelf: 'center' }}>
                   {CLASS_DETAIL.GO_STUDY}
+                </Button>
+              ) : null}
+              {showRefundBtn ? (
+                <Button
+                  type="button"
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => {
+                    setRefundReason('');
+                    setRefundDlgOpen(true);
+                  }}
+                >
+                  {DASH_STUDENT.REFUND_BTN}
                 </Button>
               ) : null}
               {isStudent && !hasApprovedAccess && !hasPendingEnrollment ? (
@@ -768,6 +835,48 @@ export function ClassDetail() {
             {PAYMENT.CONFIRM}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={refundDlgOpen}
+        onClose={() => {
+          if (!refundSubmitting) setRefundDlgOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitClassRefund();
+          }}
+        >
+          <DialogTitle>{DASH_STUDENT.REFUND_DIALOG_TITLE}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {DASH_STUDENT.REFUND_DIALOG_LEAD}
+            </Typography>
+            <TextField
+              autoFocus
+              fullWidth
+              multiline
+              minRows={4}
+              label={DASH_STUDENT.REFUND_REASON_LABEL}
+              placeholder={DASH_STUDENT.REFUND_REASON_HELPER}
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              disabled={refundSubmitting}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button type="button" onClick={() => setRefundDlgOpen(false)} disabled={refundSubmitting}>
+              {COMMON.CANCEL}
+            </Button>
+            <Button type="submit" variant="contained" disabled={refundSubmitting}>
+              {refundSubmitting ? COMMON.PLEASE_WAIT : DASH_STUDENT.REFUND_SEND}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
     </>
   );

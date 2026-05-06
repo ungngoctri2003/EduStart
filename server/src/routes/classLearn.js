@@ -7,8 +7,29 @@ import {
   scoreClassQuizSubmission,
   insertClassQuizAttempt,
 } from '../lib/classContent.js';
+import { loadClassCertificateParts } from '../lib/classCertificateParts.js';
 
 const r = Router();
+
+function pickRefundSummary(requestsForMembership) {
+  if (!requestsForMembership?.length) return null;
+  const pending = requestsForMembership.find((x) => x.status === 'pending');
+  if (pending) return pending;
+  return [...requestsForMembership].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )[0];
+}
+
+async function completedClassLectureIdsForStudent(studentId, lectureIds) {
+  if (!lectureIds.length) return [];
+  const { data: prog, error: pErr } = await supabaseAdmin
+    .from('class_lecture_progress')
+    .select('class_lecture_id')
+    .eq('student_id', studentId)
+    .in('class_lecture_id', lectureIds);
+  if (pErr) throw new Error(pErr.message);
+  return (prog || []).map((r) => r.class_lecture_id);
+}
 
 async function assertStudentInClass(req, classSlug, courseSlug = null) {
   const { data: klass, error: cErr } = await supabaseAdmin
@@ -46,6 +67,7 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
       .from('class_students')
       .select(
         `
+        id,
         joined_at,
         payment_status,
         payment_method,
@@ -73,7 +95,8 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
         quizBy.set(r.class_id, (quizBy.get(r.class_id) || 0) + 1);
       }
     }
-    const list = mem.map((m) => ({
+    const baseList = mem.map((m) => ({
+      membership_id: m.id,
       joined_at: m.joined_at,
       payment_status: m.payment_status,
       payment_method: m.payment_method,
@@ -84,6 +107,41 @@ r.get('/me', requireAuth, requireRole('student'), async (req, res) => {
         quizzes: m.classes?.id ? quizBy.get(m.classes.id) || 0 : 0,
       },
     }));
+
+    const mids = baseList.map((b) => b.membership_id).filter(Boolean);
+    const refundsByMid = new Map();
+    if (mids.length > 0) {
+      const { data: rrows, error: rErr } = await supabaseAdmin
+        .from('class_refund_requests')
+        .select('id, class_student_id, status, reason, created_at, reviewed_at, admin_note')
+        .in('class_student_id', mids);
+      if (rErr) return res.status(500).json({ error: rErr.message });
+      for (const row of rrows || []) {
+        const mid = row.class_student_id;
+        const arr = refundsByMid.get(mid) || [];
+        arr.push(row);
+        refundsByMid.set(mid, arr);
+      }
+    }
+
+    const list = await Promise.all(
+      baseList.map(async (row) => {
+        const cid = row.class?.id;
+        const approved = row.payment_status === 'approved';
+        let certificateEligible = false;
+        if (cid && approved) {
+          try {
+            const parts = await loadClassCertificateParts(req.user.id, cid);
+            certificateEligible = Boolean(parts.eligible);
+          } catch {
+            certificateEligible = false;
+          }
+        }
+        const refund_request = pickRefundSummary(refundsByMid.get(row.membership_id));
+        return { ...row, certificate_eligible: certificateEligible, refund_request };
+      }),
+    );
+
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: e.message || 'Error' });
@@ -100,12 +158,20 @@ r.get('/courses/:courseSlug/classes/:classSlug', requireAuth, requireRole('stude
       loadClassLecturesAndQuizzes(klass.id, { publishedOnly: true }),
       loadClassSchedules(klass.id),
     ]);
+    const lectureIds = (lectures || []).map((l) => l.id).filter(Boolean);
+    let completedLectureIds = [];
+    try {
+      completedLectureIds = await completedClassLectureIdsForStudent(req.user.id, lectureIds);
+    } catch (e) {
+      return res.status(500).json({ error: e.message || 'Error' });
+    }
     res.json({
       class: klass,
       course: course ? { id: course.id, slug: course.slug, title: course.title } : null,
       lectures,
       quizzes,
       schedules,
+      completed_lecture_ids: completedLectureIds,
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Error' });
@@ -121,13 +187,64 @@ r.get('/classes/:slug', requireAuth, requireRole('student'), async (req, res) =>
       loadClassLecturesAndQuizzes(klass.id, { publishedOnly: true }),
       loadClassSchedules(klass.id),
     ]);
+    const lectureIds = (lectures || []).map((l) => l.id).filter(Boolean);
+    let completedLectureIds = [];
+    try {
+      completedLectureIds = await completedClassLectureIdsForStudent(req.user.id, lectureIds);
+    } catch (e) {
+      return res.status(500).json({ error: e.message || 'Error' });
+    }
     res.json({
       class: klass,
       course: course ? { id: course.id, slug: course.slug, title: course.title } : null,
       lectures,
       quizzes,
       schedules,
+      completed_lecture_ids: completedLectureIds,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+async function markClassLectureComplete(req, res, classSlug, courseSlug) {
+  const gate = await assertStudentInClass(req, classSlug, courseSlug ?? undefined);
+  if (gate.error) return res.status(gate.status).json({ error: gate.error });
+  const { lectureId } = req.params;
+  const { data: lec, error: lErr } = await supabaseAdmin
+    .from('class_lectures')
+    .select('id, class_id')
+    .eq('id', lectureId)
+    .maybeSingle();
+  if (lErr) return res.status(500).json({ error: lErr.message });
+  if (!lec || lec.class_id !== gate.klass.id) {
+    return res.status(404).json({ error: 'Lecture not found' });
+  }
+  const { error: uErr } = await supabaseAdmin.from('class_lecture_progress').upsert(
+    {
+      student_id: req.user.id,
+      class_lecture_id: lec.id,
+      completed_at: new Date().toISOString(),
+    },
+    { onConflict: 'student_id,class_lecture_id' },
+  );
+  if (uErr) return res.status(500).json({ error: uErr.message });
+  return res.json({ ok: true });
+}
+
+r.post('/courses/:courseSlug/classes/:classSlug/lectures/:lectureId/complete', requireAuth, requireRole('student'), async (req, res) => {
+  try {
+    const { courseSlug, classSlug } = req.params;
+    return await markClassLectureComplete(req, res, classSlug, courseSlug);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+r.post('/classes/:slug/lectures/:lectureId/complete', requireAuth, requireRole('student'), async (req, res) => {
+  try {
+    const { slug } = req.params;
+    return await markClassLectureComplete(req, res, slug, null);
   } catch (e) {
     res.status(500).json({ error: e.message || 'Error' });
   }

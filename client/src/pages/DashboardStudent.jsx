@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Accordion,
   AccordionDetails,
@@ -7,12 +7,12 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardActions,
-  CardContent,
-  CardMedia,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   LinearProgress,
   Link as MuiLink,
   Paper,
@@ -22,7 +22,10 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tab,
+  Tabs,
   Typography,
+  TextField,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import {
@@ -36,14 +39,23 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Award } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '../components/PageHeader';
 import { AdminSectionCard } from '../components/admin/AdminSectionCard';
 import { useAuth } from '../context/useAuth';
-import { apiFetch } from '../lib/api';
+import { apiFetch, apiFetchBinary } from '../lib/api';
 import { classCoverUrl } from '../lib/classCoverUrl';
-import { COMMON, COURSE_DETAIL, COURSES_PAGE, DASH_STUDENT, ERR } from '../strings/vi';
+import { COMMON, COURSE_DETAIL, DASH_STUDENT, ERR } from '../strings/vi';
+
+function mapClassRefundSubmitError(code) {
+  if (code === 'REASON_TOO_SHORT') return DASH_STUDENT.REFUND_ERR_SHORT;
+  if (code === 'REASON_TOO_LONG') return DASH_STUDENT.REFUND_ERR_LONG;
+  if (code === 'REFUND_REQUEST_PENDING') return DASH_STUDENT.REFUND_ERR_PENDING;
+  return null;
+}
+
+const STUDENT_TAB_KEYS = ['overview', 'certificates'];
 
 function formatQuizScoreShort(correct, total, percent) {
   return DASH_STUDENT.QUIZ_SCORE_SHORT.replace('{correct}', String(correct))
@@ -86,9 +98,62 @@ export function DashboardStudent() {
   const [classMembershipsLoading, setClassMembershipsLoading] = useState(false);
   const [classQuizAttempts, setClassQuizAttempts] = useState([]);
   const [classAttemptsLoading, setClassAttemptsLoading] = useState(false);
+  const [refundDlgOpen, setRefundDlgOpen] = useState(false);
+  const [refundMembershipId, setRefundMembershipId] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [learnAccordionExpandedId, setLearnAccordionExpandedId] = useState(null);
   const learnAccordionAutoOpenedRef = useRef(false);
   const learnAccordionUserToggledRef = useRef(false);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = useMemo(() => {
+    const t = searchParams.get('tab');
+    return STUDENT_TAB_KEYS.includes(t) ? t : 'overview';
+  }, [searchParams]);
+  const setTab = useCallback(
+    (v) => {
+      if (!STUDENT_TAB_KEYS.includes(v)) return;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (v === 'overview') next.delete('tab');
+          else next.set('tab', v);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const [certItems, setCertItems] = useState([]);
+  const [certLoading, setCertLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'certificates' || !session?.access_token) {
+      if (!session?.access_token) setCertItems([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setCertLoading(true);
+    void (async () => {
+      try {
+        const data = await apiFetch('/api/certificates/me/status', {}, session.access_token);
+        if (!cancelled) setCertItems(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        if (!cancelled) {
+          setCertItems([]);
+          toast.error(e.message || DASH_STUDENT.CERT_LOAD_ERROR);
+        }
+      } finally {
+        if (!cancelled) setCertLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, session?.access_token]);
 
   useEffect(() => {
     learnAccordionAutoOpenedRef.current = false;
@@ -169,34 +234,50 @@ export function DashboardStudent() {
     };
   }, [session?.access_token]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadClassMemberships = useCallback(async () => {
     if (!session?.access_token) {
       setClassMemberships([]);
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
-    void Promise.resolve().then(() => {
-      if (!cancelled) setClassMembershipsLoading(true);
-    });
-    (async () => {
-      try {
-        const data = await apiFetch('/api/class-learn/me', {}, session.access_token);
-        if (!cancelled) setClassMemberships(Array.isArray(data) ? data : []);
-      } catch (e) {
-        if (!cancelled) {
-          setClassMemberships([]);
-          toast.error(e.message || DASH_STUDENT.LOAD_CLASSES_ERROR);
-        }
-      } finally {
-        if (!cancelled) setClassMembershipsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setClassMembershipsLoading(true);
+    try {
+      const data = await apiFetch('/api/class-learn/me', {}, session.access_token);
+      setClassMemberships(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setClassMemberships([]);
+      toast.error(e.message || DASH_STUDENT.LOAD_CLASSES_ERROR);
+    } finally {
+      setClassMembershipsLoading(false);
+    }
   }, [session?.access_token]);
+
+  useEffect(() => {
+    void loadClassMemberships();
+  }, [loadClassMemberships]);
+
+  const submitClassRefund = useCallback(async () => {
+    if (!session?.access_token || !refundMembershipId) return;
+    setRefundSubmitting(true);
+    try {
+      await apiFetch(
+        '/api/class-refunds',
+        {
+          method: 'POST',
+          body: JSON.stringify({ class_student_id: refundMembershipId, reason: refundReason }),
+        },
+        session.access_token,
+      );
+      toast.success(DASH_STUDENT.REFUND_SENT);
+      setRefundDlgOpen(false);
+      setRefundReason('');
+      await loadClassMemberships();
+    } catch (err) {
+      const mapped = mapClassRefundSubmitError(err.data?.error);
+      toast.error(mapped || err.message || DASH_STUDENT.REFUND_ERR_GENERIC);
+    } finally {
+      setRefundSubmitting(false);
+    }
+  }, [session?.access_token, refundMembershipId, refundReason, loadClassMemberships]);
 
   useEffect(() => {
     let cancelled = false;
@@ -503,6 +584,34 @@ export function DashboardStudent() {
           </Stack>
         </Paper>
 
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 3,
+            borderRadius: 2,
+            border: 1,
+            borderColor: 'divider',
+            overflow: 'hidden',
+          }}
+        >
+          <Tabs
+            value={tab}
+            onChange={(_, v) => setTab(v)}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{
+              px: 1,
+              bgcolor: (t) => alpha(t.palette.primary.main, 0.04),
+              '& .MuiTab-root': { fontWeight: 700, textTransform: 'none', minHeight: 48 },
+            }}
+          >
+            <Tab value="overview" label={DASH_STUDENT.TAB_OVERVIEW} />
+            <Tab value="certificates" label={DASH_STUDENT.TAB_CERTIFICATES} />
+          </Tabs>
+        </Paper>
+
+        {tab === 'overview' ? (
+        <>
         {loadFailed ? (
           <Alert severity="error" sx={{ mb: 3 }}>
             {DASH_STUDENT.LOAD_ENROLLMENTS_ERROR}
@@ -654,8 +763,16 @@ export function DashboardStudent() {
                 if (!c?.slug || !courseSlug) return null;
                 const nLec = m.counts?.lectures ?? 0;
                 const nQz = m.counts?.quizzes ?? 0;
+                const doneCert = Boolean(m.certificate_eligible);
+                const paid = m.payment_status === 'approved';
+                const refunded = m.payment_status === 'refunded';
+                const ref = m.refund_request;
+                const refPending = ref?.status === 'pending';
+                const refRejected = ref?.status === 'rejected' && paid && !refPending;
+                const canLearn = paid && !refunded && nLec > 0;
+                const showRefundBtn = paid && !refunded && !refPending;
                 return (
-                  <Paper key={c.id} elevation={0} sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider' }}>
+                  <Paper key={m.membership_id || c.id} elevation={0} sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ sm: 'center' }}>
                       <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                         <Box
@@ -672,17 +789,54 @@ export function DashboardStudent() {
                           }}
                         />
                         <Box sx={{ minWidth: 0 }}>
-                        <Typography fontWeight={800}>{c.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {DASH_STUDENT.CHIP_LECTURES.replace('{n}', String(nLec))} · {DASH_STUDENT.CHIP_QUIZZES.replace('{n}', String(nQz))}
-                        </Typography>
+                          <Typography fontWeight={800}>{c.name}</Typography>
+                          <Typography variant="caption" color="text.secondary" component="span" sx={{ display: 'block', mt: 0.25 }}>
+                            {DASH_STUDENT.CHIP_LECTURES.replace('{n}', String(nLec))} · {DASH_STUDENT.CHIP_QUIZZES.replace('{n}', String(nQz))}
+                          </Typography>
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
+                            {refunded ? (
+                              <Chip size="small" color="default" variant="outlined" label={DASH_STUDENT.REFUND_MEMBERSHIP_REFUNDED} />
+                            ) : null}
+                            {refPending ? (
+                              <Chip size="small" color="warning" label={DASH_STUDENT.REFUND_PENDING_BADGE} sx={{ fontWeight: 700 }} />
+                            ) : null}
+                            {doneCert ? (
+                              <>
+                                <Chip size="small" color="success" variant="filled" label={DASH_STUDENT.CLASS_STATUS_COMPLETED} sx={{ fontWeight: 700 }} />
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  color="primary"
+                                  icon={<Award style={{ width: 14, height: 14 }} aria-hidden />}
+                                  label={DASH_STUDENT.CLASS_CERT_BADGE}
+                                />
+                              </>
+                            ) : null}
+                            {refRejected ? (
+                              <Chip size="small" variant="outlined" label={DASH_STUDENT.REFUND_LAST_REJECTED} />
+                            ) : null}
+                          </Stack>
                         </Box>
                       </Stack>
                       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {showRefundBtn ? (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="primary"
+                            onClick={() => {
+                              setRefundMembershipId(m.membership_id || '');
+                              setRefundReason('');
+                              setRefundDlgOpen(true);
+                            }}
+                          >
+                            {DASH_STUDENT.REFUND_BTN}
+                          </Button>
+                        ) : null}
                         <Button
                           variant="outlined"
                           size="small"
-                          disabled={nLec === 0}
+                          disabled={!canLearn}
                           onClick={() => {
                             void (async () => {
                               try {
@@ -717,99 +871,6 @@ export function DashboardStudent() {
         </Box>
 
         <Stack spacing={3} sx={{ mt: 3 }}>
-            <Box>
-              <Typography variant="h6" component="h2" sx={{ fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif", fontWeight: 700 }}>
-                {DASH_STUDENT.MY_COURSES}
-              </Typography>
-              {!loadFailed && rows.length === 0 ? (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    mt: 2,
-                    p: 3,
-                    borderRadius: 2,
-                    border: 1,
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper',
-                    textAlign: { xs: 'center', sm: 'left' },
-                  }}
-                >
-                  <Typography color="text.secondary" variant="body2">
-                    {DASH_STUDENT.EMPTY}
-                  </Typography>
-                  <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mt: 1 }}>
-                    {DASH_STUDENT.CTA_BROWSE_COURSES_HINT}
-                  </Typography>
-                  <Button component={Link} to="/courses" variant="outlined" color="primary" sx={{ mt: 2 }}>
-                    {COURSES_PAGE.ALL_COURSES}
-                  </Button>
-                </Paper>
-              ) : null}
-              {rows.length > 0 ? (
-                <Stack spacing={2} sx={{ mt: 2 }}>
-                  {rows.map((r) => {
-                    const title = r.courses?.title || '—';
-                    const slug = r.courses?.slug;
-                    const thumb = r.courses?.thumbnail_url || '/img/course-1.png';
-                    return (
-                      <Card
-                        key={r.id}
-                        elevation={0}
-                        sx={{
-                          borderRadius: 2,
-                          border: 1,
-                          borderColor: 'divider',
-                          overflow: 'hidden',
-                          transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
-                          '&:hover': { boxShadow: (t) => t.shadows[3], borderColor: (t) => alpha(t.palette.primary.main, 0.35) },
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
-                          <Box
-                            sx={{
-                              width: { xs: '100%', sm: 168 },
-                              flexShrink: 0,
-                              aspectRatio: { xs: '16 / 9', sm: 'auto' },
-                              minHeight: { sm: 132 },
-                              bgcolor: 'action.hover',
-                            }}
-                          >
-                            <CardMedia component="img" image={thumb} alt="" sx={{ height: '100%', width: '100%', objectFit: 'cover' }} />
-                          </Box>
-                          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                            <CardContent sx={{ pb: 1, flex: 1 }}>
-                              <Typography variant="subtitle1" sx={{ fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif", fontWeight: 700 }}>
-                                {title}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                {DASH_STUDENT.ENROLLED_ON}{' '}
-                                {r.enrolled_at ? new Date(r.enrolled_at).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
-                              </Typography>
-                            </CardContent>
-                            <CardActions sx={{ px: 2, pb: 2, pt: 0, flexWrap: 'wrap', gap: 1 }}>
-                              {slug ? (
-                                <>
-                                  <Button component={Link} to={`/courses/${slug}`} variant="contained" color="primary" size="small">
-                                    {DASH_STUDENT.GO_STUDY}
-                                  </Button>
-                                  <Button component={Link} to={`/courses/${slug}#lectures-section`} variant="outlined" color="primary" size="small">
-                                    {DASH_STUDENT.LINK_LECTURES}
-                                  </Button>
-                                  <Button component={Link} to={`/courses/${slug}#quizzes-section`} variant="outlined" color="primary" size="small">
-                                    {DASH_STUDENT.LINK_QUIZZES}
-                                  </Button>
-                                </>
-                              ) : null}
-                            </CardActions>
-                          </Box>
-                        </Box>
-                      </Card>
-                    );
-                  })}
-                </Stack>
-              ) : null}
-            </Box>
-
             <Box>
               <Typography variant="h6" component="h2" sx={{ fontFamily: "'Outfit', ui-sans-serif, system-ui, sans-serif", fontWeight: 700 }}>
                 {DASH_STUDENT.SECTION_LEARN_BY_COURSE}
@@ -1012,7 +1073,160 @@ export function DashboardStudent() {
 
             {quizHistoryBlock}
         </Stack>
+        </>
+        ) : null}
+
+        {tab === 'certificates' ? (
+          <Box sx={{ pb: 2 }}>
+            <AdminSectionCard overline={DASH_STUDENT.CERT_SECTION_SUB} title={DASH_STUDENT.CERT_SECTION_TITLE}>
+              {certLoading ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 3 }}>
+                  <CircularProgress size={22} color="primary" />
+                  <Typography variant="body2" color="text.secondary">
+                    {COMMON.LOADING}
+                  </Typography>
+                </Box>
+              ) : null}
+              {!certLoading && certItems.length === 0 ? (
+                <Typography color="text.secondary" variant="body2" sx={{ py: 2 }}>
+                  {DASH_STUDENT.CERT_EMPTY}
+                </Typography>
+              ) : null}
+              {!certLoading && certItems.length > 0 ? (
+                <Box sx={{ overflowX: 'auto' }}>
+                  <Table size="small" sx={{ minWidth: 720 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>{DASH_STUDENT.CERT_TH_SCOPE}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{DASH_STUDENT.CERT_TH_LECTURES}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{DASH_STUDENT.CERT_TH_QUIZZES}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{DASH_STUDENT.CERT_TH_SCHEDULE}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{DASH_STUDENT.CERT_TH_STATUS}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }} align="right">
+                          {DASH_STUDENT.CERT_TH_ACTION}
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {certItems.map((item, idx) => {
+                        const kindLabel = item.kind === 'class' ? DASH_STUDENT.CERT_KIND_CLASS : DASH_STUDENT.CERT_KIND_COURSE;
+                        const scope =
+                          item.kind === 'class'
+                            ? [item.class_name, item.course_title].filter(Boolean).join(' · ') || '—'
+                            : item.course_title || '—';
+                        const sched = item.schedule;
+                        let schedLabel = DASH_STUDENT.CERT_SCHEDULE_NA;
+                        if (sched?.applicable) {
+                          if ((sched.sessions ?? 0) === 0) schedLabel = DASH_STUDENT.CERT_SCHEDULE_EMPTY;
+                          else schedLabel = sched.ok ? DASH_STUDENT.CERT_SCHEDULE_OK : DASH_STUDENT.CERT_SCHEDULE_WAIT;
+                        }
+                        return (
+                          <TableRow key={`${item.kind}-${item.course_slug || ''}-${item.class_slug || idx}`}>
+                            <TableCell sx={{ maxWidth: 260 }}>
+                              <Typography variant="body2" fontWeight={600}>
+                                {scope}
+                              </Typography>
+                              <Chip size="small" label={kindLabel} variant="outlined" sx={{ mt: 0.75 }} />
+                            </TableCell>
+                            <TableCell>{`${item.lectures?.done ?? 0}/${item.lectures?.total ?? 0}`}</TableCell>
+                            <TableCell>{`${item.quizzes?.passed ?? 0}/${item.quizzes?.total ?? 0}`}</TableCell>
+                            <TableCell>{schedLabel}</TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                color={item.eligible ? 'success' : 'default'}
+                                label={item.eligible ? DASH_STUDENT.CERT_STATUS_ELIGIBLE : DASH_STUDENT.CERT_STATUS_PENDING}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Button
+                                size="small"
+                                variant="contained"
+                                color="primary"
+                                disabled={!item.eligible || !session?.access_token}
+                                onClick={() => {
+                                  void (async () => {
+                                    try {
+                                      if (item.kind === 'course' && item.course_slug) {
+                                        await apiFetchBinary(
+                                          `/api/certificates/course/${encodeURIComponent(item.course_slug)}/pdf`,
+                                          {
+                                            accessToken: session.access_token,
+                                            filename: `chung-chi-${item.course_slug}.pdf`,
+                                          },
+                                        );
+                                      } else if (item.kind === 'class' && item.class_slug) {
+                                        const cs = item.course_slug || '_';
+                                        await apiFetchBinary(
+                                          `/api/certificates/class/${encodeURIComponent(cs)}/${encodeURIComponent(item.class_slug)}/pdf`,
+                                          {
+                                            accessToken: session.access_token,
+                                            filename: `chung-chi-lop-${item.class_slug}.pdf`,
+                                          },
+                                        );
+                                      }
+                                    } catch (e) {
+                                      toast.error(e.message || DASH_STUDENT.CERT_DOWNLOAD_ERR);
+                                    }
+                                  })();
+                                }}
+                              >
+                                {DASH_STUDENT.CERT_DOWNLOAD}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </Box>
+              ) : null}
+            </AdminSectionCard>
+          </Box>
+        ) : null}
       </Box>
+
+      <Dialog
+        open={refundDlgOpen}
+        onClose={() => {
+          if (!refundSubmitting) setRefundDlgOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitClassRefund();
+          }}
+        >
+          <DialogTitle>{DASH_STUDENT.REFUND_DIALOG_TITLE}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {DASH_STUDENT.REFUND_DIALOG_LEAD}
+            </Typography>
+            <TextField
+              autoFocus
+              fullWidth
+              multiline
+              minRows={4}
+              label={DASH_STUDENT.REFUND_REASON_LABEL}
+              placeholder={DASH_STUDENT.REFUND_REASON_HELPER}
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              disabled={refundSubmitting}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button type="button" onClick={() => setRefundDlgOpen(false)} disabled={refundSubmitting}>
+              {COMMON.CANCEL}
+            </Button>
+            <Button type="submit" variant="contained" disabled={refundSubmitting}>
+              {refundSubmitting ? COMMON.PLEASE_WAIT : DASH_STUDENT.REFUND_SEND}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
     </>
   );
 }

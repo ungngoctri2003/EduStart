@@ -78,7 +78,7 @@ r.post('/', requireAuth, requireRole('student'), async (req, res) => {
           membership: existing,
         });
       }
-      if (existing.payment_status === 'rejected') {
+      if (existing.payment_status === 'rejected' || existing.payment_status === 'refunded') {
         const { data: updated, error: uErr } = await supabaseAdmin
           .from('class_students')
           .update({

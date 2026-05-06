@@ -91,7 +91,7 @@ const FEATURED_COURSE_COUNT = 6;
 const FEATURED_HOME_CLASS_COUNT = 3;
 
 export function Home() {
-  const { coursePaymentById, classPaymentById } = useStudentCatalogAccess();
+  const { coursePaymentById, classPaymentById, classCertificateEligibleById } = useStudentCatalogAccess();
   const [index, setIndex] = useState(0);
   const [teamPreview, setTeamPreview] = useState([]);
   const [categoriesPreview, setCategoriesPreview] = useState([]);
@@ -653,6 +653,7 @@ export function Home() {
                 klass={klass}
                 courseSlug={klass.course_slug}
                 paymentStatus={classPaymentById.get(klass.id) ?? null}
+                certificateEligible={Boolean(classCertificateEligibleById.get(klass.id))}
               />
             </motion.div>
           ))}

@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Calendar, ChevronRight, Clock, GraduationCap, Users } from 'lucide-react';
+import { BadgeCheck, Calendar, ChevronRight, Clock, GraduationCap, Users, Award } from 'lucide-react';
 import { Box, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { classCoverUrl } from '../lib/classCoverUrl';
@@ -44,15 +44,16 @@ function MetaRow({ icon, label, children }) {
 }
 
 /**
- * @param {{ klass: object & { course_slug?: string }, courseSlug?: string, paymentStatus?: string | null }} props
+ * @param {{ klass: object & { course_slug?: string }, courseSlug?: string, paymentStatus?: string | null, certificateEligible?: boolean }} props
  */
-export function ClassCatalogCard({ klass, courseSlug: courseSlugProp, paymentStatus = null }) {
+export function ClassCatalogCard({ klass, courseSlug: courseSlugProp, paymentStatus = null, certificateEligible = false }) {
   const theme = useTheme();
   const courseSlug = courseSlugProp ?? klass.course_slug;
   const teacher = klass.teacher_name;
   const n = klass.student_count;
   const showApproved = paymentStatus === 'approved';
   const showPending = paymentStatus === 'pending';
+  const showCompleted = Boolean(certificateEligible) && showApproved;
   const fee = formatVndFromPriceCentsOrFree(klass.price_cents, COMMON.FREE);
   const desc = (() => {
     if (!klass.description) return null;
@@ -151,7 +152,24 @@ export function ClassCatalogCard({ klass, courseSlug: courseSlugProp, paymentSta
               }}
             />
           </Stack>
-          {showApproved ? (
+          {showCompleted ? (
+            <Chip
+              icon={<Award size={14} aria-hidden />}
+              label={CATALOG_BADGES.CLASS_COMPLETED}
+              size="small"
+              color="success"
+              sx={{
+                position: 'absolute',
+                right: 12,
+                top: 12,
+                fontWeight: 800,
+                fontSize: '0.6875rem',
+                height: 28,
+                boxShadow: `0 4px 14px ${alpha(theme.palette.common.black, 0.18)}`,
+                '& .MuiChip-icon': { color: 'inherit' },
+              }}
+            />
+          ) : showApproved ? (
             <Chip
               icon={<BadgeCheck size={14} aria-hidden />}
               label={CATALOG_BADGES.CLASS_JOINED}

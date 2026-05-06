@@ -5,6 +5,7 @@ import { alpha } from '@mui/material/styles';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { LectureContentBlocks } from '../components/LectureContentBlocks';
 import { PageHeader } from '../components/PageHeader';
+import { toast } from 'sonner';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/useAuth';
 import { COMMON, COURSE_DETAIL, ERR, LECTURE_DETAIL } from '../strings/vi';
@@ -17,6 +18,7 @@ export function LectureDetail() {
   const [myEnrollments, setMyEnrollments] = useState(null);
   const [classMemberships, setClassMemberships] = useState(null);
   const [contentLoading, setContentLoading] = useState(false);
+  const [lectureMarkSaving, setLectureMarkSaving] = useState(false);
 
   const isStudent = profile?.role === 'student';
   const courseId = course?.id;
@@ -43,7 +45,16 @@ export function LectureDetail() {
     setContentLoading(true);
     try {
       const data = await apiFetch(`/api/learn/courses/${encodeURIComponent(slug)}`, {}, session.access_token);
-      setCourse((prev) => (prev ? { ...prev, lectures: data.lectures || [], quizzes: data.quizzes || [] } : prev));
+      setCourse((prev) =>
+        prev
+          ? {
+              ...prev,
+              lectures: data.lectures || [],
+              quizzes: data.quizzes || [],
+              completed_lecture_ids: data.completed_lecture_ids || [],
+            }
+          : prev,
+      );
     } catch (e) {
       if (e.status === 403 && e.data?.error === 'NOT_ENROLLED') {
         setCourse((prev) => (prev ? { ...prev, lectures: [], quizzes: [] } : prev));
@@ -118,6 +129,8 @@ export function LectureDetail() {
   const lectures = Array.isArray(course?.lectures) ? course.lectures : [];
   const lecture = lectures.find((l) => String(l.id) === String(lectureId));
   const idx = lectures.findIndex((l) => String(l.id) === String(lectureId));
+  const completedLectureIds = new Set(Array.isArray(course?.completed_lecture_ids) ? course.completed_lecture_ids : []);
+  const lectureCompleted = Boolean(lecture && completedLectureIds.has(lecture.id));
   const prevLec = idx > 0 ? lectures[idx - 1] : null;
   const nextLec = idx >= 0 && idx < lectures.length - 1 ? lectures[idx + 1] : null;
 
@@ -312,6 +325,42 @@ export function LectureDetail() {
             />
 
             <LectureContentBlocks blocks={lecture.blocks} lectureTitle={lecture.title} />
+
+            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ mt: 3 }}>
+              {lectureCompleted ? (
+                <Chip label={LECTURE_DETAIL.LECTURE_COMPLETED} color="success" variant="outlined" sx={{ fontWeight: 700 }} />
+              ) : (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={lectureMarkSaving || !session?.access_token}
+                  onClick={() => {
+                    void (async () => {
+                      setLectureMarkSaving(true);
+                      try {
+                        await apiFetch(
+                          `/api/learn/courses/${encodeURIComponent(slug)}/lectures/${encodeURIComponent(lecture.id)}/complete`,
+                          { method: 'POST', body: JSON.stringify({}) },
+                          session.access_token,
+                        );
+                        setCourse((prev) => {
+                          if (!prev) return prev;
+                          const raw = prev.completed_lecture_ids || [];
+                          const next = [...raw.filter((id) => id !== lecture.id), lecture.id];
+                          return { ...prev, completed_lecture_ids: next };
+                        });
+                      } catch (e) {
+                        toast.error(e.message || LECTURE_DETAIL.COMPLETE_ERROR);
+                      } finally {
+                        setLectureMarkSaving(false);
+                      }
+                    })();
+                  }}
+                >
+                  {lectureMarkSaving ? COMMON.LOADING : LECTURE_DETAIL.MARK_COMPLETE}
+                </Button>
+              )}
+            </Stack>
 
             {(prevLec || nextLec) && (
               <Paper

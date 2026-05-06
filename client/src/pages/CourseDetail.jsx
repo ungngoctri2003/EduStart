@@ -59,7 +59,7 @@ export function CourseDetail() {
   const [courseClasses, setCourseClasses] = useState([]);
   const [courseClassesLoading, setCourseClassesLoading] = useState(false);
   const reduce = useReducedMotion() ?? false;
-  const { classPaymentById } = useStudentCatalogAccess();
+  const { classPaymentById, classCertificateEligibleById } = useStudentCatalogAccess();
 
   const isStudent = profile?.role === 'student';
   const courseId = course?.id;
@@ -455,11 +455,6 @@ export function CourseDetail() {
                   {COURSE_DETAIL.GO_DASHBOARD}
                 </Button>
               ) : null}
-              {isStudent && hasCourseAccess && !courseClassesLoading && courseClasses.length > 0 ? (
-                <Button type="button" variant="text" color="primary" href="#course-classes-section" sx={{ alignSelf: 'center' }}>
-                  {COURSE_DETAIL.NAV_TO_CLASSES}
-                </Button>
-              ) : null}
               {isStudent && !hasCourseAccess && !anyPendingPayment && !courseClassesLoading && courseClasses.length === 0 ? (
                 <Button type="button" variant="contained" color="primary" disabled={enrolling} onClick={openEnrollFlow}>
                   {enrolling ? <CircularProgress size={22} color="inherit" sx={{ mr: 1 }} /> : null}
@@ -554,6 +549,7 @@ export function CourseDetail() {
                     klass={k}
                     courseSlug={k.course_slug ?? slug}
                     paymentStatus={classPaymentById.get(k.id) ?? null}
+                    certificateEligible={Boolean(classCertificateEligibleById.get(k.id))}
                   />
                 ))}
               </Box>

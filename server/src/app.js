@@ -10,6 +10,8 @@ import adminRoutes from './routes/admin.js';
 import teacherRoutes from './routes/teacher.js';
 import classLearnRoutes from './routes/classLearn.js';
 import classEnrollmentsRoutes from './routes/classEnrollments.js';
+import certificatesRoutes from './routes/certificates.js';
+import classRefundsRoutes from './routes/classRefunds.js';
 import meRoutes from './routes/me.js';
 
 function resolveClientOrigin() {
@@ -44,6 +46,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/class-learn', classLearnRoutes);
 app.use('/api/class-enrollments', classEnrollmentsRoutes);
+app.use('/api/class-refunds', classRefundsRoutes);
+app.use('/api/certificates', certificatesRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
